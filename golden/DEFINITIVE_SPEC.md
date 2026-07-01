@@ -141,6 +141,9 @@ else:
 **Same-cycle commit overlay rule**:
 - P1 source resolution must include a same-cycle commit overlay for normal P4 commits.
 - This overlay has priority over persistent `ARF/DST_REG` state.
+- The overlay matches in two cases (OR condition):
+  1. **rd-based architectural overlay**: `DST_REG[rs].busy == 0` and register index matches
+  2. **tag-based same-producer match**: `DST_REG[rs].busy == 1` but `DST_REG[rs].tag == commit_tag` (exact producer committing)
 - A matching source resolves as:
 ```text
 rsX_ready    = 1
@@ -148,6 +151,8 @@ rsX_data     = committed result_data
 rsX_wait_tag = 4'h0
 ```
 - This rule exists so the architecture does **not** depend on implementation-specific same-cycle ARF read-after-write or DST_REG clear visibility.
+- The tag-based match (case 2) is critical: it allows a consumer at P1 to use the exact producer's commit value even when `DST_REG[rs].busy == 1`, suppressing Condition B stall.
+- **RTL implementation**: p1_source_resolution.sv line 145: `(!current_busy || current_tag == c_pay[1].commit_tag)`
 - If both `head0` and `head1` commit in the same cycle and both write the same logical destination in the same file, the effective overlay value is the younger `head1` commit result, because P1 must see the post-commit architectural state for that cycle.
 - Integer `x0` still behaves as architecturally zero and must not be resolved through a destination mapping or commit overlay writeback.
 
@@ -228,7 +233,13 @@ To enforce the "no-forward-from-ROB" constraint, P1 blocks dispatch of instructi
 
 **Stall Action**: If Condition A or B triggers, assert `P1_Stall`. DSP withholds the ISQ write for that instruction, so the corresponding head instruction remains in ISB and is retried on the next cycle. Condition C cancels the stall for LSU predictive wakeup.
 
-Here, `same_cycle_commit_match(wait_tag)` means that one of the normal same-cycle P4 commit slots is retiring that exact producer tag and therefore exposing the committed value through the explicit P4->P1 commit overlay.
+Here, `same_cycle_commit_match(wait_tag)` means that one of the normal same-cycle P4 commit slots is retiring that exact producer tag and therefore exposing the committed value through the explicit P4->P1 commit overlay (via the tag-based same-producer match described in Section 2.2.1).
+
+**RTL implementation**: p1_deadlock_prevention.sv function check_stall():
+- Condition A: line 54-57 (bypass_valid && tag match)
+- Condition B: line 60-62 (rob_done_bits[tag] && !commit_payload match)
+- Condition C: line 65 (agu_early_tag_valid && tag match)
+- Return logic: line 67 `return (cond_a || cond_b) && !cond_c;`
 
 **Two-layer stall design** (P1 is combinational DSP between ISB and ISQ):
 - **Condition A** (fast path): Uses bypass_tag from P3 arbiter (combinational, available immediately). Provides early stall detection - cuts off the P1 combinational path before ROB DFF updates.
@@ -246,22 +257,50 @@ Both conditions work as a chain: Condition A blocks the same-cycle case (bypass 
 
 #### 2.2.4 LSU Predictive Wakeup (agu_early_tag)
 
-When a Load instruction enters the LSU FU stage (Group 3), the address computation (AGU) is performed internally. At the end of this stage, `agu_early_tag` (4-bit) is sent to P1.
+**Mechanism**: `agu_early_tag` implements a **P1 stall exemption** mechanism that allows Load-dependent consumers to dispatch into ISQ before the Load completes, avoiding deadlock while maintaining correct data dependency.
 
-**Registered timing**: `agu_early_tag` is registered at the LSU FU output (posedge clk). P1 samples it at the next posedge clk. This 1-cycle registered latency ensures STA closure on the long Group 3->P1 timing path.
+**Generation timing (RTL: fake_lsu.sv line 536-538)**:
+- Generated when Load enters LSU Issue cycle (`req_valid=1 && is_load`)
+- Condition: Load must not trigger address range exception
+- Lifetime: Single-cycle pulse, automatically cleared next cycle (line 403-404)
+- `agu_early_tag_valid` and `agu_early_tag` are registered signals
 
-**Sequence**:
-1. Load instruction enters Group 3 LSU FU -> AGU computes address, `agu_early_tag` latched at posedge clk
-2. Next cycle, P1 sees `agu_early_tag = inst0_tag`. Dependent instruction matches `wait_tag == agu_early_tag` -> **Stall cancelled** (Condition C)
-3. Dependent instruction enters Issue Queue with `rs_ready = 0`, waits in ISQ
-4. Load instruction proceeds to L1Dcache, reads data -> pushes real `result_data` + `tag_out` onto Bypass bus
-5. Dependent instruction in queue latches Bypass data via tag match -> ready for execution
+**P1 Dispatch Effect (Condition C)**:
+When a consumer instruction reaches P1 with `wait_tag` matching the current `agu_early_tag`:
+1. **Condition A stall is cancelled** (even if bypass_valid matches the tag)
+2. **Condition B stall is cancelled** (even if ROB[wait_tag].done==1)
+3. Consumer **immediately dispatches into ISQ** with `rs_ready=0`
+4. Consumer waits in ISQ for the real data via Bypass[3]
+
+**RTL implementation**: p1_deadlock_prevention.sv line 65:
+```systemverilog
+cond_c = early_valid && (rs_tag == early_tag);
+return (cond_a || cond_b) && !cond_c;  // Condition C cancels stall
+```
+
+**Timing Example**:
+```
+Cycle N:   Load enters LSU Issue
+           → agu_early_tag_valid=1, agu_early_tag=T_load (same cycle)
+           
+Cycle N:   Dependent consumer arrives at P1
+           → DST_REG[rs].busy=1, tag=T_load
+           → Condition B would trigger, BUT Condition C cancels
+           → Consumer dispatches to ISQ with rs_ready=0, wait_tag=T_load
+           
+Cycle N+1: agu_early_tag_valid cleared
+           Load proceeds to Stage1 (AGU)
+           
+Cycle N+2: Load completes Stage2 (WB)
+           → Bypass[3].valid=1, tag=T_load, data=load_result
+           → Consumer wakes up via bypass tag match
+```
 
 **Key constraint**: LSU FU **never** broadcasts data on Bypass until L1Dcache returns. Only sends `agu_early_tag` control signal to P1 predictively.
 
 `agu_early_tag` may be emitted only when all of the following hold:
 1. the instruction is a **Load**, not a Store
-2. AGU address computation for that load completed
+2. AGU address computation for that load completed (Issue cycle)
 3. no synchronous address-side exception has already been detected for that load (for example misalignment, permission, or translation failure)
 4. the corresponding load request has been accepted by the L1D-side request interface
 
@@ -969,6 +1008,11 @@ For Stores, `head*_done` from the normal execution/writeback path means the stor
 **Same-cycle `DST_REG` conflict rule**:
 - If a same-cycle younger `P1` allocation write targets the same `DST_REG` entry as an older same-cycle `P4` tag-matched clear, the younger allocation mapping wins for the persistent next-state.
 - The older commit still retires architecturally, but it must not erase the newer producer mapping.
+- **RTL implementation**: dst_reg.sv line 58-77, within always_ff block:
+  - P4 commit clear executes first (line 59-67)
+  - P1 allocation write executes second (line 70-77)
+  - Comment at line 69: "Dispatch: Allocate new tags (overrides commit clear)"
+  - SystemVerilog semantics: later non-blocking assignments to the same signal override earlier ones within the same always_ff block
 
 **Store drain request for head stores**:
 - If a buffered store reaches the ROB head and has not yet completed drain, P4 emits:
@@ -1026,6 +1070,23 @@ if (flush_kind == EXCEPTION):
 ```
 
 **Flush actions** (all combinational, take effect at next `posedge clk`):
+
+**Same-cycle combinational effects**:
+- `Global_Flush_Late` is generated in p4_commit_control.sv within an `always_comb` block (line 114-279)
+- As a combinational signal, it propagates in the same cycle to:
+  - P1: cancels same-cycle allocation and ISQ write
+  - P3: masks same-cycle bypass valid signals
+  - LSU: cancels pending requests
+- Younger instructions are architecturally considered "Flushed" in this cycle for timing diagram purposes
+
+**Next-cycle sequential effects**:
+- DST_REG.busy bits are cleared via the always_ff clock edge
+- ROB state arrays are cleared via their always_ff logic
+- These are implementation details that do not delay the architectural Flushed marking
+
+**RTL implementation**:
+- Flush generation: p4_commit_control.sv line 243-251 (always_comb)
+- DST_REG clear: dst_reg.sv line 53-56 (always_ff)
 
 | Signal | Target | Behavior |
 |---|---|---|

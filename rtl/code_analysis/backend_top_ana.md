@@ -45,3 +45,5 @@ bypass_bus[g].valid = group_wb_payload[g].result_valid && !global_flush_late;
 ```
 
 This prevents P1 Condition A and P2 ISQ wakeup/select from observing a same-cycle killed producer as a real forwarding event. ROB, ROB sidearray, and CSR pending state also give the flush clear/reset path priority over same-cycle P3 writes.
+
+The important timing point is that `global_flush_late` itself comes from the P4 commit arbiter, so the masking happens in the same cycle the flush is selected. The state arrays may clear on the following clock edge, but the visibility boundary is already closed by the combinational `valid` mask.

@@ -32,6 +32,8 @@ dst_entry_t [31:0] dst_table;
 *   在时钟边沿，`dst_reg` 会找到 `x6` 这一行，**残酷地覆盖它**：将 `busy` 设为 `1`，`tag` 更新为 `15`。
 *   **逻辑美学**：从此以后，任何比它年轻的、想要读 `x6` 的指令，查表拿到的都将是最新的 `Tag 15`。这是解决 Write-After-Write (WAW) 和 Read-After-Write (RAW) 假相关障碍的终极魔法。
 
+这里还有一个很重要但很容易被忽略的实现细节：P4 的清除逻辑和 P1 的分配逻辑是写在同一个 `always_ff` 里，但顺序是“先清再分配”。也就是说，如果同一拍里一个老指令刚好要把 `x6` clear 掉，而一个更新的年轻指令又重新把 `x6` allocate 成 busy，那么最后生效的是年轻指令的 mapping。RTL 里甚至直接写了注释：`overrides commit clear`。
+
 ### 2.3 给 P4 提供清算 (Commit Ports - 解除 Busy)
 如果在前面第 2 步中，指令 `Tag 15` 执行完了，成了老资格，在 P4 阶段功成身退 (Commit)。
 *   P4 会把 `Tag 15` 和目标寄存器 `x6` 传过来。
@@ -43,3 +45,6 @@ dst_entry_t [31:0] dst_table;
     ```
     它必须确认现在占着 `x6` 的到底还是不是 `Tag 15`！如果不是（说明在它后面，又有一个更年轻的指令宣称要改写 `x6`，且拿到了更年轻的 Tag），那么 `dst_reg` **绝对不会**解除 busy 状态。
 *   如果匹配，解除 busy 状态，宣告 `x6` 彻底从“期货市场”回归到安稳的“现货市场 (ARF)”。
+
+### 2.4 Flush 下的优先级
+`clear_all_busy` 的优先级高于 commit / allocation。只要 `Global_Flush_Late` 让 `clear_all_busy` 拉高，整张表都会在下一拍被同步清空 busy 位，前面说的 tag-matched commit clear 和 allocation 覆盖都不会再参与这一轮状态更新。

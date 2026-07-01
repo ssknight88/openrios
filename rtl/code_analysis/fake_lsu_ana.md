@@ -24,6 +24,13 @@
 
 ## Load 行为
 
+Load 在这个模型里是一个**固定两拍执行路径**：
+
+- 第 1 拍：Issue 进入 LSU，进入内部 Stage1，也就是 AGU 地址计算阶段。
+- 第 2 拍：进入 Stage2，输出 `lsu_wb.result_valid/result_data`，随后走普通 P3 bypass 回写路径。
+
+所以对当前模型来说，L1D hit 的 Load 可以理解为：`Issue -> AGU -> WB`，总共 2 个 execution cycle。这里的 2 拍是当前 mock 的确定性 fast path，不是变量延迟内存模型。
+
 Load 进入 fake LSU 后，如果地址合法：
 
 - 优先查 STB，同地址命中时执行 Store-to-Load forwarding。
@@ -35,6 +42,10 @@ Load 地址异常时：
 - 不发 `agu_early_tag`。
 - 不读取 `mem`，也不做 STB forwarding。
 - 通过 `lsu_wb.exception_flag=1`、`exception_cause=5` 写入 ROB/sidearray，由 P4 精确触发 flush。
+
+## agu_early_tag
+
+`agu_early_tag` 不是数据，只是一个给 P1 用的预测性 tag 控制信号。它在 Load 的 Issue / AGU 入口拍被拉高，作为单拍脉冲使用；下一拍会自动清掉。它的作用是让 P1 能提前放行依赖这个 Load 的指令进入 ISQ，从而避免“bypass 已过、commit 未到”之间的死锁窗口。
 
 ## Store Exception
 

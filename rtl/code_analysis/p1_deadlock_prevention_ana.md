@@ -42,11 +42,21 @@ function automatic logic check_stall(input logic ready, input logic [TAG_W-1:0] 
 endfunction
 ```
 
+这里的逻辑可以拆成三层：
+- `ready == 1`：说明这个源已经在 P1 看到可用结果，不需要再 stall。
+- `rob_done_bits[tag] == 1` 且**没有**赶上 bypass：说明这个 producer 已经离开广播窗口，P1 如果此时才入队，就会错过它的真实数据。
+- `tag_is_early == 1`：说明这是 LSU 提前吐出的 `agu_early_tag`，它可以作为例外取消 stall，避免 Load 相关依赖在“bypass 已过、commit 未到”之间卡死。
+
 ### 2.2 施加反压 (Stall)
 如果 `check_stall` 对指令的任意一个操作数返回 `1`，模块就会输出 `slotX_stall = 1`。
 这个 `stall` 信号会被送到 P1 分配模块，强制这条指令停留在前端缓冲区（ISB）不要发射。
 
+更精确地说，`slotX_stall` 实际上是对每个源操作数分别做 `check_stall` 后再做 OR 汇总：只要任意一个源需要等，就会阻止整个 slot 进入 ISQ。对于 `rob_done_bits[tag]` 命中的场景，stall 的目的不是惩罚已经就绪的数据，而是防止“已经错过广播窗口”的指令在 ISQ 里永久等不到结果。
+
 指令只能在 ISB 里傻等，直到产生那个结果的老指令在 P4 阶段完成 Commit（数据进了 ARF，`DST_REG` 清除 busy）。在那个周期的下一拍，新指令重新查表，就会发现数据可以直接从 ARF 读了（`ready = 1`），死锁危机解除。
+
+### 2.3 和 `agu_early_tag` 的关系
+`tag_is_early` 不是“ISQ 已经能直接拿到数据”的意思，而是“P1 允许这个依赖先进入 ISQ，等后面真正的 bypass 再醒来”。也就是说，它取消的是 P1 的 stall，不是 Load 数据本身的延迟。
 
 ## 3. 总结
 虽然这种“真空期”死锁发生的概率极低（只有在 ROB 积累了大量已完成但未提交的指令时才会出现），但这个模块是乱序处理器鲁棒性的试金石。它通过牺牲 1~2 拍的 Stall，换取了整个系统的绝对安全。

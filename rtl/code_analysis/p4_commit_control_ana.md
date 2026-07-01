@@ -38,3 +38,8 @@ P4 对 Store 的处理分三类：
 而对于提交（commit_ack）的压制规则如下：
 * **异常 (Exception) 或 中断 (Interrupt) 引起的 Flush**：当拍不会有任何指令提交，`commit_ack` 被压制为 `0`。
 * **分支预测错误 (Misprediction) 引起的 Flush**：在发出 `global_flush_late` 的当拍，该分支指令本身仍然会正常提交（`commit_ack` 为 `1` 或 `2`），以确保分支指令完成其寄存器写回（例如 JAL/JALR 写入返回地址），随后从下一拍开始清空后续的投机指令并跳转。
+
+`global_flush_late` 不是一个“下一拍才知道”的慢信号，它本身就是 `always_comb` 里生成的组合控制，因此会在同一拍影响后端其它路径：
+- backend_top 会把 P3 的 `bypass_bus[g].valid` 用 `!global_flush_late` 屏蔽掉，所以被 flush 掉的 P3 结果不会被当成真实前递事件。
+- P1 的 Condition A / ISQ wakeup 也不会观察到这个同拍被杀掉的 producer。
+- `dst_reg` 之类的状态清理则还是跟着各自的时序逻辑在下一个时钟边沿完成。

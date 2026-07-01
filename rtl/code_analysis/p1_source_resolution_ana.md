@@ -36,7 +36,13 @@
 
 ### 步骤 C：P4 极晚期前递 (Commit Bypass)
 *   **场景**：如果 `DST_REG` 说 busy 且给出 Tag=A。但在这一模一样的时钟周期，Tag A 恰好正在 P4 Commit（即写 ARF）！
-*   **解决**：如果不处理，这条新指令会拿着 Tag A 进 ISQ 傻等，但 Tag A 永远不会在 Bypass 总线上出现了（它已经退休了）。所以，模块引入了 `commit_payload` 检查：如果监听的 Tag 恰好正在当拍提交，则当场把提交的数据“截胡”，并标记 `ready = 1`。
+*   **解决**：如果不处理，这条新指令会拿着 Tag A 进 ISQ 傻等，但 Tag A 永远不会在 Bypass 总线上出现了（它已经退休了）。所以，模块在查源时会先看 `commit_payload`：如果当前源寄存器正好匹配到**本拍提交**的同一个目的寄存器，就直接把提交数据当成可用结果返回。
+
+这一步不是单一条件，而是两个互补入口：
+1. **架构态可见**：`DST_REG[rs].busy == 0` 时，表示这个源已经是最终架构值，直接从 ARF 读。
+2. **精确同源提交**：`DST_REG[rs].busy == 1` 但 `DST_REG[rs].tag == commit_tag` 时，表示这个源虽然在 rename 表里还是 busy，但它等待的正是本拍正在 P4 退休的那条 producer，因此可以直接截胡 `commit_payload.result_data`。
+
+这也是为什么 P1 在同一拍里既能保留旧的 rename 依赖判断，又不会错过“刚好在这一拍退休”的那个结果。Slot 0 的同拍 rename overlay 仍然优先于 Slot 1 和 persistent `DST_REG` 状态；P4 commit bypass 只是补上 `busy==1` 且 tag 精确匹配的那种情况。
 
 ## 4. 总结
 这个模块是“虚拟时序（程序顺序）”与“物理时序（数据准备顺序）”的交汇点。经过这层洗礼，无论软件怎么折腾寄存器，硬件都能精准地用 Tag 把真实的数据依赖链（Data Dependency Graph）构建出来。
