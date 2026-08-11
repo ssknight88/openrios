@@ -49,6 +49,12 @@ CSR 写通路：CSR 指令执行时算出的"写哪个、写什么"（csr_addr�
 
 另有两条对外供给：为 Flush_Model 提供按 flush_tag 索引的恢复上下文读口（mispredict 目标 PC、exception 的 cause/tval）；为 P1 导出 valid/exec_done 两条向量，供派发前判断唤醒窗口是否已错过。
 
+Danielle 的版本：
+SCB 按 tag 跟踪每条在飞指令的生命周期，包括在飞、执行完成、store 排空等状态；
+同时保存退休和恢复裁决所需的事件信息，包括分支预测错误、异常、store、串行指令、MRET 以及 CSR 写回信息。SCB 每拍检查队头 tag，按程序顺序决定提交数量、是否发起 store 排空、是否触发 flush，并产出退休侧控制信号。
+CSR 写回信息先随对应tag 保存在 SCB 表项中，只有该指令到达队头并被提交时才更新架构 CSR；若提交前被flush，该写入随表项失效而取消。
+SCB 还为 Flush_Model 提供恢复上下文，并向 P1导出生命周期/完成状态，用于判断依赖是否错过唤醒窗口。
+
 ## 11. Flush_Model — flush 翻译与广播
 
 职责：唯一生成全局 flush 信号；把判定链交来的 flush 事件翻译成前端重定向（按 kind 选恢复 PC）与特权态更新（送外围 CSR 寄存器堆）。
