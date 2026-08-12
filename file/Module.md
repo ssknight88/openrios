@@ -1,3 +1,5 @@
+# Submodule Description
+
 ## 1. IB
 
 P0 前后端边界的有序指令缓冲，向 DSP 提供最多两个队头指令并承受后端回压；只有目标 ISQ 成功写入时才 dequeue，Late Flush 时清除可见投机内容。
@@ -48,6 +50,12 @@ One Entry，valid(1 bit)。Issue 需要满足：操作数齐、对应 FU 本拍�
 CSR 写通路：CSR 指令执行时算出的"写哪个、写什么"（csr_addr、csr_wdata）不许当场落笔——架构状态只在提交拍更新——先随写回存进这条指令自己的表项里候着；等它排到队头、判定链放行提交的那一拍，SCB 从表项读出这批内容，以 arch_csr_write 事件送外围 CSR 寄存器堆，此时才真正写入；若它在提交前被 flush，表项作废，这笔写随之蒸发。
 
 另有两条对外供给：为 Flush_Model 提供按 flush_tag 索引的恢复上下文读口（mispredict 目标 PC、exception 的 cause/tval）；为 P1 导出 valid/exec_done 两条向量，供派发前判断唤醒窗口是否已错过。
+
+Danielle 的版本：
+SCB 按 tag 跟踪每条在飞指令的生命周期，包括在飞、执行完成、store 排空等状态；
+同时保存退休和恢复裁决所需的事件信息，包括分支预测错误、异常、store、串行指令、MRET 以及 CSR 写回信息。SCB 每拍检查队头 tag，按程序顺序决定提交数量、是否发起 store 排空、是否触发 flush，并产出退休侧控制信号。
+CSR 写回信息先随对应tag 保存在 SCB 表项中，只有该指令到达队头并被提交时才更新架构 CSR；若提交前被flush，该写入随表项失效而取消。
+SCB 还为 Flush_Model 提供恢复上下文，并向 P1导出生命周期/完成状态，用于判断依赖是否错过唤醒窗口。
 
 ## 11. Flush_Model — flush 翻译与广播
 
