@@ -36,6 +36,10 @@ P0 前后端边界的有序指令缓冲，深度为8
 
 职责：记录当前是否有一条串行指令在飞（全机唯一的一份 valid+tag），以此挡死后续派发、保证串行指令独占后端；提交或 flush 时解除。
 
+### system instruction handler
+
+mret, fence.i, sfence.vma, csrrw mstatus...
+
 ## PC_File
 
 16 项、按 Buffer tag 索引的 PC-only 存储结构，仅保存 inst_pc
