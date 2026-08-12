@@ -32,19 +32,19 @@ P0 前后端边界的有序指令缓冲，深度为8
 
 职责：唯一生成全局 flush 信号；把判定链交来的 flush 事件翻译成前端重定向（按 kind 选恢复 PC）与特权态更新（送外围 CSR 寄存器堆）。
 
-### CSR_Control — 串行化 tracker
+### Serial_Control — 串行化 tracker
 
 职责：记录当前是否有一条串行指令在飞（全机唯一的一份 valid+tag），以此挡死后续派发、保证串行指令独占后端；提交或 flush 时解除。
 
 ### System_Instruction_Control
 
-职责：专门处理 ebreak、csrrw/csrrs、MRET、SRET、DRET 等系统指令
+职责：专门处理 ecall、csrrw/csrrs、MRET、SRET、DRET 等系统指令
 
 ## PC_File
 
 16 项、按 Buffer tag 索引的 PC-only 存储结构，仅保存 inst_pc
 
-## dependency_check
+## Dependency_Check
 
 1. 解析 Inst：从 Buffer_tail 导出两个 slot 的 self_tag；生成 used_rd（只抑制整数 x0，不抑制 f0）；导出三类标志供 p1_dsp 准入——present（IB 有没有指令）、serial（串行指令只许在 Buffer 排空时从 slot0 单独发出，serial0 同时置位 CSR tracker，serial_inst 禁止串行指令参与双发）、fp0/fp1（FP 源读口只有一条指令的宽度，同拍两 slot 不得同为 FP，即双 FP 阻塞）。
 2. 同拍 RAW 检查：slot1 的每个源与 slot0 的目的寄存器对比，命中则 slot1 该源改为 slot0 的 tag。
