@@ -3,12 +3,12 @@
 组内三个 requester，`FU_Group` 是**组内 FU 索引**：
 
 ```text
-FU_Group = 0   ALU0 / BRU / MRET   —— 三者共用一个 requester 接口，不能同拍竞争
-FU_Group = 1   CSR                 —— 非流水
-FU_Group = 2   DIV                 —— 非流水
+FU_Group = 0   ALU0 / BRU
+FU_Group = 1   CSR
+FU_Group = 2   DIV
 ```
 
-四组中**唯一需要分支预测字段**的一组（BRU 要拿 `pc` / `pred_*` 判是否 mispredict）。
+**唯一需要分支预测字段**的一组（BRU 要拿 `pc` / `pred_*` 判是否 mispredict）。
 
 ## ① per-entry state
 
@@ -16,7 +16,7 @@ FU_Group = 2   DIV                 —— 非流水
 
 - 就是 `isq_valid` 一位：0 = FREE，1 = RESIDENT。只有一个 entry，无指针
 
-## ② state transition & condition（event 名）
+### ② state transition & condition（event 名）
 
 - FREE → RESIDENT：dispatch
 - RESIDENT → RESIDENT：dispatch（同拍发射）
@@ -26,33 +26,29 @@ FU_Group = 2   DIV                 —— 非流水
 
 ## ③ condition 细化
 
-- **dispatch** = `wr_en`（单向选通 fire）
-- 写使能已在上游吸收 `isq_free_for_dispatch`，本模块**不重组第二份 ready/valid 握手**
-  - `payload_in` 是持续组合 D 输入，只在 `wr_en = 1` 时捕获
+- **dispatch** = `wr_en`
+  - `payload_in` 在 `wr_en = 1` 时捕获
 - **issue** = `issue_valid` ∧ `FU_ready[FU_Group]` ∧ `!global_flush_late`
   - `issue_valid` = `isq_valid` ∧ `operand_ready`
     - `operand_ready` = `(rs1_ready ∨ fast_ready_rs1) ∧ (rs2_ready ∨ fast_ready_rs2)`
       —— **本组不用 `rs3`**，不参与取与
     - `fast_ready_rsX` = `!rsX_ready` ∧ OR over b∈{0..3} (`bypass_valid[b]` ∧ `rsX_wait_tag == bypass_tag[b]`)
-      - `!rsX_ready` 不可省：ready 后 `wait_tag` 保持不变，且 tag 0 是合法 tag
-        - **四条 bypass lane 全监听**——bypass 是全局广播，不按组收窄
-    - `FU_ready[FU_Group]` 是**三位**电平输入，按组内索引取用
+      - **四条 bypass lane 全监听**——bypass 是全局广播
+    - `FU_ready[FU_Group]` 是按组内索引取用
 - **bypass_capture** = `isq_valid` ∧ `!global_flush_late` ∧ `!issue`
   ∧ (`fast_ready_rs1` ∨ `fast_ready_rs2`)
   - 同拍 issue 时不捕获，只向 FU 前递
 - **flush** = `global_flush_late`
   - 优先级最高：flush 拍不 dispatch、不 issue、不 capture，`isq_valid ← 0`
 
-**`FU_ready` 契约**（本组含两个非流水 FU，必须显式定义）：
+**`FU_ready` 契约**
 
 ```text
 FU_ready[k] = FU k 本拍能接收一条新指令
-非流水 FU（CSR / DIV）在执行中保持 FU_ready = 0；
+FU（CSR / DIV）在执行中保持 FU_ready = 0；
 在 P3 组内仲裁输掉、须 hold 住 completion request 时同样保持 0
 ```
 
-- `FU_Group = 0` 是 **ALU0 / BRU / MRET 共用的一个** requester 接口——三者在 P3 侧
-  共用 requester index 0，不是三个能同拍竞争的 requester，故 `FU_ready[0]` 也只有一位
 - 组内 P3 仲裁的静态优先级为 `ALU0/BRU > CSR > DIV`，无 anti-starvation；
   该保证依赖按序退休
 
@@ -61,11 +57,6 @@ FU_ready[k] = FU k 本拍能接收一条新指令
 ```text
 isq_free_for_dispatch = !isq_valid ∨ issue        // 含同拍 issue
 ```
-
-**含同拍 `issue`**，与 [[Buffer微架构文档.md]] 的 `can_alloc_1/2`、[[IB微架构文档.md]] 的
-`room_q`（两者皆**拍初值**）取相反约定，**三处逐个查，不可类推**。
-代价：该投影的组合深度包含 `FU_ready` —— `FU_ready → issue → isq_free_for_dispatch`，
-消费者的准入判定要等 `FU_ready` 稳定才成立。
 
 ## ④ data path
 
@@ -85,7 +76,7 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - `bypass_capture` 命中时只置 `rsX_ready`，`rsX_wait_tag` 不改——否则下一拍会拿新 tag 重新匹配
 - `payload_in` 给的是完整 payload，本模块**只捕获 ⑤ 列出的字段**，其余丢弃
 
-## ⑤ data structure（schema + 字段三角色）
+### ⑤ data structure（schema + 字段三角色）
 
 - **state**：`isq_valid`
 - **header**
@@ -97,9 +88,8 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
     - `imm_valid + imm_data`：`dispatch` 写入（ALU 立即数型、CSR 的 `uimm` 型）
     - `pc + pred_taken + pred_target_pc`：`dispatch` 写入，BRU 判 mispredict 用
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入，本模块不查。
-      **位宽与编码待定**——取决于 FU 侧哪个值对应哪个操作。
-      C 扩展的 `is_compressed`（BRU 算链接值要区分 `pc+2` / `pc+4`）也归在此处
+    - **子码 / Full Decode 控制信号**：`dispatch` 写入,
+      **位宽与编码待定**
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 
@@ -108,7 +98,7 @@ rs3_ready / rs3_wait_tag / rs3_data   本组无三源指令
 is_store / store_size                 访存字段，只有 LSU 用
 ```
 
-## ⑥ 接口
+### ⑥ 接口
 
 **in-event** `→ ISQ_Group0`
 

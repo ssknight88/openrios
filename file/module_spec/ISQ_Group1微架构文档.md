@@ -3,8 +3,8 @@
 组内两个 requester，`FU_Group` 是**组内 FU 索引**：
 
 ```text
-FU_Group = 0   ALU1   —— 单周期
-FU_Group = 1   MUL    —— 流水
+FU_Group = 0   ALU1
+FU_Group = 1   MUL
 ```
 
 ## ① per-entry state
@@ -23,29 +23,27 @@ FU_Group = 1   MUL    —— 流水
 
 ## ③ condition 细化
 
-- **dispatch** = `wr_en`（单向选通 fire）
-  - 写使能已在上游吸收 `isq_free_for_dispatch`，本模块**不重组第二份 ready/valid 握手**
-    - `payload_in` 是持续组合 D 输入，只在 `wr_en = 1` 时捕获
+- **dispatch** = `wr_en`
+  - `payload_in` 在 `wr_en = 1` 时捕获
 - **issue** = `issue_valid` ∧ `FU_ready[FU_Group]` ∧ `!global_flush_late`
   - `issue_valid` = `isq_valid` ∧ `operand_ready`
     - `operand_ready` = `(rs1_ready ∨ fast_ready_rs1) ∧ (rs2_ready ∨ fast_ready_rs2)`
       —— **本组不用 `rs3`**，不参与取与
     - `fast_ready_rsX` = `!rsX_ready` ∧ OR over b∈{0..3} (`bypass_valid[b]` ∧ `rsX_wait_tag == bypass_tag[b]`)
-      - `!rsX_ready` 不可省：ready 后 `wait_tag` 保持不变，且 tag 0 是合法 tag
-        - **四条 bypass lane 全监听**——bypass 是全局广播，不按组收窄
-    - `FU_ready[FU_Group]` 是**两位**电平输入，按组内索引取用
+      - **四条 bypass lane 全监听**——bypass 是全局广播
+    - `FU_ready[FU_Group]` 是按组内索引取用
 - **bypass_capture** = `isq_valid` ∧ `!global_flush_late` ∧ `!issue`
   ∧ (`fast_ready_rs1` ∨ `fast_ready_rs2`)
   - 同拍 issue 时不捕获，只向 FU 前递
 - **flush** = `global_flush_late`
   - 优先级最高：flush 拍不 dispatch、不 issue、不 capture，`isq_valid ← 0`
 
-**`FU_ready` 契约**：
+**`FU_ready` 契约**
 
 ```text
 FU_ready[k] = FU k 本拍能接收一条新指令
-ALU1 单周期，恒 ready
-MUL 是流水 FU，其 output hold 被占满时 FU_ready = 1 → 0；
+ALU1 恒 ready
+MUL 的 output hold 被占满时 FU_ready = 1 → 0；
     在 P3 组内仲裁输掉、须 hold 住 completion request 时同样拉低
 ```
 
@@ -57,14 +55,9 @@ MUL 是流水 FU，其 output hold 被占满时 FU_ready = 1 → 0；
 isq_free_for_dispatch = !isq_valid ∨ issue        // 含同拍 issue
 ```
 
-**含同拍 `issue`**，与 [[Buffer微架构文档.md]] 的 `can_alloc_1/2`、[[IB微架构文档.md]] 的
-`room_q`（两者皆**拍初值**）取相反约定，**三处逐个查，不可类推**。
-代价：该投影的组合深度包含 `FU_ready` —— `FU_ready → issue → isq_free_for_dispatch`，
-消费者的准入判定要等 `FU_ready` 稳定才成立。
+## ④ data path
 
-### ④ data path
-
-#### 1. `entry` 的捕获与发射
+### 1. `entry` 的捕获与发射
 
 ```text
 dispatch 输入端口 → entry           本组 schema 的全部字段（见 ⑤）
@@ -80,7 +73,7 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - `bypass_capture` 命中时只置 `rsX_ready`，`rsX_wait_tag` 不改——否则下一拍会拿新 tag 重新匹配
 - `payload_in` 给的是完整 payload，本模块**只捕获 ⑤ 列出的字段**，其余丢弃
 
-### ⑤ data structure（schema + 字段三角色）
+## ⑤ data structure（schema + 字段三角色）
 
 - **state**：`isq_valid`
 - **header**
@@ -91,8 +84,7 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
   - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（ALU 立即数型）
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入，本模块不查。
-      **位宽与编码待定**——取决于 FU 侧哪个值对应哪个操作
+    - **子码 / Full Decode 控制信号**：`dispatch` 写入，**位宽与编码待定**
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 
@@ -102,7 +94,7 @@ pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
 is_store / store_size                 访存字段，只有 LSU 用
 ```
 
-### ⑥ 接口
+## ⑥ 接口
 
 **in-event** `→ ISQ_Group1`
 

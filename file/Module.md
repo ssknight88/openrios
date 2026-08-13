@@ -32,11 +32,11 @@ P0 前后端边界的有序指令缓冲，深度为8
 
 职责：唯一生成全局 flush 信号；把判定链交来的 flush 事件翻译成前端重定向（按 kind 选恢复 PC）与特权态更新（送外围 CSR 寄存器堆）。
 
-### Serial_Control — 串行化 tracker
+### Serial_Control_Tracker — 串行化 tracker
 
 职责：记录当前是否有一条串行指令在飞（全机唯一的一份 valid+tag），以此挡死后续派发、保证串行指令独占后端；提交或 flush 时解除。
 
-### System_Instruction_Control
+### System_Instruction_Handler
 
 职责：专门处理 ecall、csrrw/csrrs、MRET、SRET、DRET 等系统指令
 
@@ -66,10 +66,7 @@ One Entry，valid(1 bit)。Issue 需要满足：操作数齐、对应 FU 本拍�
 
 ## Buffer — 16 entries
 
-1. 分配：两写口，写入 rd_idx、rd_is_fp、use_rd；tag 就是 entry 地址，与 PC File、SCB 共用同一套地址算术，分配位置天然一致。不清零任何字段——result_data 只在执行完成后才会被读。
-2. 写回：四条完成 lane 随机寻址，只写 result_data。
-3. 提交与回滚：commit 只按 SCB 给的提交条数推 head；flush 拍先落下当拍提交（head 先按提交条数前移）、tail 回滚到 head 位置
-4. 读口与投影：两个队头读口持续组合输出整条 entry，数据平面从这里点对点直连消费端——result_data 接 ARF 写数据口与 Commit CDB 的 data，rd_idx 接 ARF 写地址与重命名表清除口，use_rd/rd_is_fp 作为消费端本地合成 write enable 的 qualifier
+16 项、按 Buffer tag 索引的 result-only 存储结构。分配时两写口仅占用 entry，tag 就是 buffer entry 地址，与 PC File、SCB 共用同一套地址算术，分配位置一致；entry 内唯一 payload 是 result_data；它只在执行完成后由四条完成 lane 按 `tag_out` 寻址写入 `entry[tag_out].result_data`。提交与回滚时，commit 只按 SCB 给出的提交条数推进 head，flush 拍先落下当拍提交（head 先按提交条数前移）、tail 回滚到 head 位置；两个队头读口按 `head0_tag` / `head1_tag` 读出对应 entry 的 `result_data`，对外命名为 `commit_data[k]`，并接 INT/FP ARF 写数据口与 Commit CDB 的 `data`。
 
 ## FU
 

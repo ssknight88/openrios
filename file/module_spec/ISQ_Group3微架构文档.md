@@ -1,7 +1,7 @@
 # ISQ_Group3 · LSU 组 · 单 entry
 
 组内只有 LSU 一个 FU，`FU_Group` 恒为 0。
-**四组中唯一带访存字段**的一组（`is_store` / `store_size`）。
+**唯一带访存字段**的一组（`is_store` / `store_size` / `store_mask`）。
 
 ## ① per-entry state
 
@@ -19,28 +19,26 @@
 
 ## ③ condition 细化
 
-- **dispatch** = `wr_en`（单向选通 fire）
-  - 写使能已在上游吸收 `isq_free_for_dispatch`，本模块**不重组第二份 ready/valid 握手**
-    - `payload_in` 是持续组合 D 输入，只在 `wr_en = 1` 时捕获
+- **dispatch** = `wr_en`
+  - `payload_in` 在 `wr_en = 1` 时捕获
 - **issue** = `issue_valid` ∧ `FU_ready` ∧ `!global_flush_late`
   - `issue_valid` = `isq_valid` ∧ `operand_ready`
     - `operand_ready` = `(rs1_ready ∨ fast_ready_rs1) ∧ (rs2_ready ∨ fast_ready_rs2)`
       —— **本组不用 `rs3`**，不参与取与。`rs1` 是基址、`rs2` 是 store 数据
     - `fast_ready_rsX` = `!rsX_ready` ∧ OR over b∈{0..3} (`bypass_valid[b]` ∧ `rsX_wait_tag == bypass_tag[b]`)
-      - `!rsX_ready` 不可省：ready 后 `wait_tag` 保持不变，且 tag 0 是合法 tag
-        - **四条 bypass lane 全监听**——bypass 是全局广播，不按组收窄
-    - `FU_ready` 是 LSU 的电平输入。组内单成员，**无索引**
+      - **四条 bypass lane 全监听**——bypass 是全局广播
+    - `FU_ready` 组内单成员，**无索引**
 - **bypass_capture** = `isq_valid` ∧ `!global_flush_late` ∧ `!issue`
   ∧ (`fast_ready_rs1` ∨ `fast_ready_rs2`)
   - 同拍 issue 时不捕获，只向 LSU 前递
 - **flush** = `global_flush_late`
   - 优先级最高：flush 拍不 dispatch、不 issue、不 capture，`isq_valid ← 0`
 
-**`FU_ready` 契约**：
+**`FU_ready` 契约**
 
 ```text
 FU_ready = LSU 本拍能接收一条新访存指令
-LSU 的一切内部反压（地址队列 / store buffer 余量 / 非流水段占用）
+LSU 的一切内部反压（地址队列 / store buffer 余量 / 执行段占用）
 都必须折进这一位，本模块不另设第二条反压通路
 ```
 
@@ -53,11 +51,6 @@ LSU 的一切内部反压（地址队列 / store buffer 余量 / 非流水段占
 ```text
 isq_free_for_dispatch = !isq_valid ∨ issue        // 含同拍 issue
 ```
-
-**含同拍 `issue`**，与 [[Buffer微架构文档.md]] 的 `can_alloc_1/2`、[[IB微架构文档.md]] 的
-`room_q`（两者皆**拍初值**）取相反约定，**三处逐个查，不可类推**。
-代价：该投影的组合深度包含 `FU_ready` —— `FU_ready → issue → isq_free_for_dispatch`，
-消费者的准入判定要等 `FU_ready` 稳定才成立。
 
 ## ④ data path
 
@@ -86,11 +79,11 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - **payload**
   - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（访存偏移）
-    - `is_store + store_size`：`dispatch` 写入，本模块不查
+    - `is_store + store_size + store_mask`：`dispatch` 写入，本模块不查
+      - `store_size` 为 3 bit 访存宽度编码
+      - `store_mask` 为 8 bit 字节 lane mask，随 LSU 请求结构透传
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入，本模块不查。
-      **位宽与编码待定**——取决于 FU 侧哪个值对应哪个操作。
-      A 扩展的 `aq` / `rl` 与 AMO 操作码也归在此处
+    - **子码 / Full Decode 控制信号**：`dispatch` 写入，**位宽与编码待定**
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 
@@ -121,7 +114,7 @@ pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
 **out-event** `ISQ_Group3 →`
 
 - issue；`rs1_data`(64)、`rs2_data`(64)、`imm_valid`(1)、`imm_data`(64)、
-  `is_store`(1)、`store_size`(2)、`self_tag`(4)、子码
+  `is_store`(1)、`store_size`(3)、`store_mask`(8)、`self_tag`(4)、子码
 
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 LSU，交付语义与 ready 归集成层登记。

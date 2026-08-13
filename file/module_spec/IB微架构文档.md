@@ -15,9 +15,9 @@
 - **enqueue**：**采样约定——只使用拍初空位**，不使用当拍 dequeue 释放的 entry
 
 ```text
-room_q           = 8 - valid_count_q
-accepted_slot[0] = fe_valid[0] ∧ (room_q >= 1) ∧ !global_flush_late
-accepted_slot[1] = fe_valid[1] ∧ accepted_slot[0] ∧ (room_q >= 2) ∧ !global_flush_late
+free_slot          = 8 - valid_count
+accepted_slot[0] = fe_valid[0] ∧ (free_slot >= 1) ∧ !global_flush_late
+accepted_slot[1] = fe_valid[1] ∧ accepted_slot[0] ∧ (free_slot >= 2) ∧ !global_flush_late
 enq_count        = accepted_slot[0] + accepted_slot[1]      // wptr += enq_count
 ```
 
@@ -25,29 +25,30 @@ enq_count        = accepted_slot[0] + accepted_slot[1]      // wptr += enq_count
 - `accepted_slot` 合法取值 `00 / 01 / 11`——**`10` 非法**
 - full 时即使当拍 dequeue，也要到下一拍才接收——这是"只用拍初空位"的直接后果
 
+非 flush 拍，FE 必须保留未接受候选的有序后缀，并在下一拍将其
+压缩到候选序列前缀重新提交，payload 与程序顺序保持不变。
+例如 `fe_valid=11`、`accepted_slot=01` 时，原 slot1 必须在下一拍
+作为新的 slot0 重新提交。
+
+flush 拍 `accepted_slot=00`；redirect 取消上述保持义务，旧路径候选
+丢弃，FE 从 `redirect_pc` 重新取指。
+
 - **dequeue[s]** = `inst_valid[s]` ∧ `ib_dequeue[s]`
 
 ```text
-inst_valid[0] = (valid_count_q >= 1)
-inst_valid[1] = (valid_count_q >= 2)        // 故 inst_valid[1] ⇒ inst_valid[0]
+inst_valid[0] = (valid_count >= 1)
+inst_valid[1] = (valid_count >= 2)        // inst_valid[1] ⇒ inst_valid[0]
 deq_count     = dequeue[0] + dequeue[1]     // rptr += deq_count
 ```
 
-- `valid_count_q = (wptr - rptr) mod 16`，两个指针都是拍初寄存值，
-  故其差值就是**拍初**已占用条数；次态 `valid_count = valid_count_q + enq_count - deq_count`
-- 设计不变量 `0 <= valid_count_q <= 8`，故 empty = `valid_count_q == 0`、full = `valid_count_q == 8`
-- `ib_dequeue[s]` 的语义是"对该队头 slot 的选择"，本模块**不展开对端的准入公式**
+- `valid_count = (wptr - rptr) mod 16`，两个指针都是拍初寄存值，
+  故其差值就是**拍初**已占用条数；次态 `valid_count = valid_count + enq_count - deq_count`
 - `ib_dequeue[1] ⇒ ib_dequeue[0]`，故 dequeue 集合只能是 `00 / 01 / 11`，连续队头不跳过 slot0
 - 队头两个 slot 对应 `rptr` 与 `rptr + 1` 的连续 entry
 
 - **flush** = `global_flush_late`：优先级最高，`accepted_slot = 00`、`ib_dequeue = 00`，
   指针复位（含 loopbit）且次态 `valid_count = 0`
 - 非 flush 拍按 enqueue / dequeue 的净变化更新 `valid_count`
-
-**回压契约**：`room_q` 是**容量提示，不是 ready**。真正的接受判据是本模块算出的
-`accepted_slot[1:0]`，它**必须回送给上游**——`accepted_slot[s] == 0` 的候选，
-上游有义务保持不变、下一拍重新提交。**少了这条回送边，指令会静默丢失。**
-flush 拍 `accepted_slot = 00`，上游的保持义务被 redirect 取代。
 
 ## ④ data path
 
@@ -57,20 +58,18 @@ flush 拍 `accepted_slot = 00`，上游的保持义务被 redirect 取代。
 
 ```text
 enqueue 输入端口 → entry[wptr + n]    整条 IB_Payload
-entry            → 队头输出端口              整条 IB_Payload（队头 2 slot 持续输出）
+entry            → 队头输出端口        整条 IB_Payload（队头 2 slot 持续输出）
 ```
 
 - 队头输出是**持续组合候选值**，不由 `dequeue` 选通；`dequeue` 只推进 `rptr`
 
-### 2. `inst_valid[1:0]` / `accepted_slot[1:0]` / `room_q`(output)
+### 2. `inst_valid[1:0]` / `accepted_slot[1:0]` / `free_slot`(output)
 
 ```text
 inst_valid[1:0]    ← ③
 accepted_slot[1:0] ← ③ 的接受判定
-room_q             ← valid_count_q 的投影
+free_slot             ← valid_count 的投影
 ```
-
-- 三项均由指针导出，不占 entry 存储
 
 ## ⑤ data structure（schema + 字段三角色）
 
@@ -89,12 +88,19 @@ imm_valid、imm_data、pred_taken、pred_target_pc、
 子码 / Full Decode 控制信号（位宽与编码待定）
 ```
 
-- `route_class` 是**逻辑候选组类别**：普通 INT ALU 为 `{G0,G1}`，
-  `BRU/MRET/CSR/DIV/MUL/FPU/LSU` 分别固定到 `G0/G0/G0/G0/G1/G2/G3`；
-  下游把它解析为实际的 group 编号
-- `FU_Group` 是**组内 FU 索引**（INT ALU 为 0，CSR/DIV/MUL 分别为 1/2/1，
-  BRU/MRET/FPU/LSU 为 0），**不是全局组编号**
-- `inst_valid[s]` 由 `valid_count_q` 导出，**不属于** `IB_Payload`
+- `route_class` 是**逻辑候选组类别**：ALU 为 `{G0,G1}` 动态二选一，
+  `BRU（含 MRET）/CSR/DIV/MUL/FPU/LSU` 分别固定到 `G0/G0/G0/G1/G2/G3`；
+  下游把它解析为实际的 group 编号。**MRET 不是独立类**——编码在 ALU/BRU 子码空间、
+  同 requester 同 FU_Group，`is_serial` 由译码独立标注
+- `FU_Group` 是**组内 FU 索引**（ALU 为 0，CSR/DIV/MUL 分别为 1/2/1，
+  BRU（含 MRET）/FPU/LSU 为 0），**不是全局组编号**
+- `is_serial` 当前覆盖 **CSR 指令（CSRRW/S/C 及立即数型）与 MRET**
+- **待补**：`ECALL` / `EBREAK` / `FENCE` / `WFI` / `FENCE.I` 暂不支持，
+  `route_class` 无其归属。补入时归 G0（与 MRET 同 requester 的透传 / NOP 子码），
+  `is_serial` 口径同步扩展；FENCE.I 需"提交后重取"，可实现为无条件
+  `mispredict_flag = 1`、`target = pc + 4`（压缩指令 `pc + 2`），复用 MISPREDICT flush。
+  **缓行期间的兜底**：译码遇到这五条，一律按非法指令 trap。
+  系统指令退休效应的宿主见 [[system_instruction_handler微架构文档.md]] ① 的挂点清单
 
 ## ⑥ 接口
 
@@ -120,4 +126,4 @@ imm_valid、imm_data、pred_taken、pred_target_pc、
 
 **Static Info：**
 
-- `room_q`(4) —— `valid_count_q` 的投影，只反映**拍初容量**。**不是 ready**，见 ③
+- `free_slot`(4) —— 8-`valid_count`，只反映**拍初容量**。③

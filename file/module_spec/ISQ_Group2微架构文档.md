@@ -1,7 +1,7 @@
 # ISQ_Group2 · FPU 组 · 单 entry
 
 组内只有 FPU 一个 FU，`FU_Group` 恒为 0。
-**四组中唯一使用 `rs3` 的一组**——FMA 类指令需要三个源。
+**唯一使用 `rs3` 的一组**——FMA 类指令需要三个源。
 
 ## ① per-entry state
 
@@ -9,7 +9,7 @@
 
 - 就是 `isq_valid` 一位：0 = FREE，1 = RESIDENT。只有一个 entry，无指针
 
-## ② state transition & condition（event 名）
+### ② state transition & condition（event 名）
 
 - FREE → RESIDENT：dispatch
 - RESIDENT → RESIDENT：dispatch（同拍发射）
@@ -19,17 +19,15 @@
 
 ## ③ condition 细化
 
-- **dispatch** = `wr_en`（单向选通 fire）
-  - 写使能已在上游吸收 `isq_free_for_dispatch`，本模块**不重组第二份 ready/valid 握手**
-    - `payload_in` 是持续组合 D 输入，只在 `wr_en = 1` 时捕获
+- **dispatch** = `wr_en`
+  - `payload_in` 在 `wr_en = 1` 时捕获
 - **issue** = `issue_valid` ∧ `FU_ready` ∧ `!global_flush_late`
   - `issue_valid` = `isq_valid` ∧ `operand_ready`
     - `operand_ready` = `(rs1_ready ∨ fast_ready_rs1) ∧ (rs2_ready ∨ fast_ready_rs2)`
       `∧ (rs3_ready ∨ fast_ready_rs3)` —— **三源全参与**
     - `fast_ready_rsX` = `!rsX_ready` ∧ OR over b∈{0..3} (`bypass_valid[b]` ∧ `rsX_wait_tag == bypass_tag[b]`)
-      - `!rsX_ready` 不可省：ready 后 `wait_tag` 保持不变，且 tag 0 是合法 tag
-        - **四条 bypass lane 全监听**——bypass 是全局广播，不按组收窄
-    - `FU_ready` 是 FPU 的电平输入。组内单成员，**无索引**
+      - **四条 bypass lane 全监听**——bypass 是全局广播
+    - `FU_ready` 组内单成员，**无索引**
 - **bypass_capture** = `isq_valid` ∧ `!global_flush_late` ∧ `!issue`
   ∧ (`fast_ready_rs1` ∨ `fast_ready_rs2` ∨ `fast_ready_rs3`)
   - 同拍 issue 时不捕获，只向 FPU 前递
@@ -41,11 +39,6 @@
 ```text
 isq_free_for_dispatch = !isq_valid ∨ issue        // 含同拍 issue
 ```
-
-**含同拍 `issue`**，与 [[Buffer微架构文档.md]] 的 `can_alloc_1/2`、[[IB微架构文档.md]] 的
-`room_q`（两者皆**拍初值**）取相反约定，**三处逐个查，不可类推**。
-代价：该投影的组合深度包含 `FU_ready` —— `FU_ready → issue → isq_free_for_dispatch`，
-消费者的准入判定要等 `FU_ready` 稳定才成立。
 
 ## ④ data path
 
@@ -74,10 +67,7 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - **payload**
   - `rs1_data` / `rs2_data` / `rs3_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入，本模块不查。
-      **位宽与编码待定**——取决于 FU 侧哪个值对应哪个操作。
-      F/D 的 `rm`（bits[14:12]，算术指令是舍入模式、FSGNJ/FMIN/FEQ 类是操作选择）
-      也归在此处
+    - **子码 / Full Decode 控制信号**：`dispatch` 写入，**位宽与编码待定**
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 

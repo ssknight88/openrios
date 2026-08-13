@@ -1,7 +1,4 @@
-# p1_check_resolve · 纯组合 · P1 上下文、同拍 RAW 检查与源解析
-
-它承担三项职责：**公共上下文**（`self_tag`、写抑制、slot / serial / fp 标志）、
-**slot0→slot1 同拍 RAW 检查**、**源状态与选择码解析**。
+# dependency_check
 
 ## ① per-entry state
 
@@ -13,25 +10,29 @@
 
 ## ③ condition 细化
 
-**无。** 本模块不产生也不消费 fire。
+**无。**
 
 ## ④ data path
 
 ### 1. `self_tag[s]` / `rd_write_enable[s]`(output)
+
 推导：
 
 ```text
 self_tag[0] = Buffer_tail
-self_tag[1] = Buffer_tail + 1       // 4-bit mod16 回绕
+self_tag[1] = Buffer_tail + 1
 
 rd_write_enable[s] =
       use_rd[s]
     ∧ !(rd_idx[s] == 0 ∧ !rd_is_fp[s])
 ```
 
-- `rd_write_enable[s]` 只抑制 INT `rd_idx == 0`；FP bank 的 `f0` 不抑制
+- `rd_write_enable[s]` 只抑制 INT `rd_idx == 0`；FP侧 的 `f0` 不抑制
 
-### 2. `slot0_present` / `slot1_present` / `serial0` / `serial_inst` / `fp0` / `fp1`(output)
+### 2. `slot0_present` / `slot1_present` / `serial0` / `serial_inst` /
+
+`fp0` / `fp1`(output)
+
 推导：
 
 ```text
@@ -45,34 +46,32 @@ fp0 = is_fp_instruction[0]
 fp1 = is_fp_instruction[1]
 ```
 
-- 只转发上游的 `is_serial` / `is_fp_instruction`，不按 opcode 或 `route_class` 重新推导
-- `fp0` / `fp1` 供下游判双FP指令阻塞 > 依据：[[p1_dsp微架构文档.md]] ④
+- `fp0` / `fp1` 供下游判双FP指令阻塞 > 依据：[[dispatch_logic微架构文档.md]] ④
 
-### 3. `slot_missed_wakeup` / `rsX_ready` / `rsX_wait_tag` / `rs_data_sel_t`(output)
+### 3. `slot_missed_wakeup` / `rsX_ready` / `rsX_wait_tag` / `rs_data_sel_t`
+
+(output)
+
 推导：
 **第一步 · 同拍 RAW 命中**（slot0 的目的寄存器 → slot1 的源）
 
 ```text
-slot1_dep_hit[x] =                              x ∈ {1,2,3}，只对 slot1 求值
-      slot0_present ∧ rd_write_enable[0]        // slot0 确实要写目的寄存器
+slot1_dep_hit[x] =                      //x ∈ {1,2,3}，只对 slot1 求值
+    slot0_present ∧ rd_write_enable[0]  // slot0 确实要写目的寄存器
     ∧ use_rsX[1]
     ∧ (rsX_idx[1]   == rd_idx[0])
     ∧ (rsX_is_fp[1] == rd_is_fp[0])
 ```
 
 - **只覆盖 RAW**；WAR / WAW 不进入这一步，目的寄存器既有写口覆盖规则不变
-- **无环约束**：用 `slot0_present` 而非 `accept[0]`，且不读 CompletionScoreboard、
-  Commit CDB、bypass。若用 `accept[0]` 就会形成
-  `accept → 命中 → 源解析 → missed_wakeup → accept` 的组合环
-- 不需要 `slot1_present`：slot1 无效时命中结果只是无消费者的组合值
 
 **第二步 · 源查询：**
 
 ```text
-producer_tag[s][x] = rsX_is_fp[s] ?  FP_DST_REG[fp_read_idx[x]].tag
-                                  : INT_DST_REG[rsX_idx[s]].tag
-arf_ready[s][x]    = rsX_is_fp[s] ? !FP_DST_REG[fp_read_idx[x]].busy
-                                  : !INT_DST_REG[rsX_idx[s]].busy
+producer_tag[s][x] = rsX_is_fp[s] ?  FP_tag_mapping[fp_read_idx[x]].tag
+                                  : INT_tag_mapping[rsX_idx[s]].tag
+arf_ready[s][x]    = rsX_is_fp[s] ? !FP_tag_mapping[fp_read_idx[x]].busy
+                                  : !INT_tag_mapping[rsX_idx[s]].busy
 
 commit_match(t) / commit_lane(t) = 在 2 条 Commit lane 上找 valid ∧ tag == t
 bypass_match(t) / bypass_lane(t) = 在 4 条 bypass lane 上找 valid ∧ tag == t
@@ -84,7 +83,7 @@ bypass_match(t) / bypass_lane(t) = 在 4 条 bypass lane 上找 valid ∧ tag ==
 - INT 侧 4 个读口按 `(s,x) ∈ {0,1}×{1,2}` 一一对应；`rs3` 永不走 INT
   （上游契约 `use_rs3[s] ⇒ rs3_is_fp[s]`）
 
-**第三步 · 六选一，一次定出三个输出字段：**
+**第三步 · 根据条件选择data来源：**
 
 对每个 `s ∈ {0,1}`、`x ∈ {1,2,3}`，自上而下**首个命中者胜**：
 
@@ -105,8 +104,9 @@ slot_missed_wakeup[s] = OR over x∈{1,2,3} (
 
 - `rs_data_sel_t = { sel_arf, sel_commit[2], sel_bypass[4] }`，7 bit、onehot0。
   全零只表示本拍不采样源数据，**不替代 `rsX_ready` 的状态含义**
-- **本模块不取任何源数据**：只比 tag；命中 lane 的 `data` 与 `rsX_data` 都由
-  [[p1_ISQ_input_mux微架构文档.md]] 按选择码读取
+- **本模块不取任何源数据**：只比 tag。按选择码从 ARF / Commit CDB / bypass lane 取数
+  装配 `rsX_data` 的逻辑**归集成层**（与 FU 连线同级；
+  [[p1_ISQ_input_mux微架构文档.md]] 只做 slot 二选一，不做字段装配）
 - missed-wakeup 只查第 6 行：第 1 行等的是本拍才分配的 slot0 tag，Scoreboard 里还没有它；
   第 3–5 行已经 READY
 
@@ -116,17 +116,17 @@ slot_missed_wakeup[s] = OR over x∈{1,2,3} (
 
 ## ⑥ 接口
 
-**in-event** `→ p1_check_resolve`
+**in-event** `→ dependency_check`
 
 - 组合读(in):
 
   - broadcast；`inst_valid`(1)、`rd_idx`(5)、`rd_is_fp`(1)、`use_rd`(1)、`is_serial`(1)、`is_fp_instruction`(1)、`use_rs1/2/3`(1 各)、`rs1/2/3_idx`(5 各)、`rs1/2/3_is_fp`(1 各)—— 每 slot 一份，s∈{0,1}＝队头 2 slot
 
-    - broadcast；`Buffer_tail`(4) —— 算 `self_tag[s]` 的基址
+    - broadcast；`Buffer_tail`(4) —— 算 `self_tag[s]` 的基址（由 CompletionScoreboard 导出，信号名沿用）
 
-    - broadcast；`INT_DST_REG[rsX_idx[s]].tag`(4)、`INT_DST_REG[rsX_idx[s]].busy`(1) —— **4 读口**，(s,x) ∈ {0,1}×{1,2}
+    - broadcast；`INT_tag_mapping[rsX_idx[s]].tag`(4)、`INT_tag_mapping[rsX_idx[s]].busy`(1) —— **4 读口**，(s,x) ∈ {0,1}×{1,2}
 
-    - broadcast；`FP_DST_REG[fp_read_idx[x]].tag`(4)、`FP_DST_REG[fp_read_idx[x]].busy`(1)—— **3 读口**，x ∈ {1,2,3}
+    - broadcast；`FP_tag_mapping[fp_read_idx[x]].tag`(4)、`FP_tag_mapping[fp_read_idx[x]].busy`(1)—— **3 读口**，x ∈ {1,2,3}
 
     - broadcast；`scoreboard_valid_bits[16]`、`scoreboard_exec_done_bits[16]`
       —— 判 producer 是否已完成
@@ -138,15 +138,14 @@ slot_missed_wakeup[s] = OR over x∈{1,2,3} (
 - `bypass_publish`（announce，**4 lane**）
   - broadcast；`bypass_valid[b]`(1，b∈{0..3})、`bypass_tag[b]`(4，b∈{0..3}) —— 同上；**不取 `data`**
 
-本模块**不接收 flush**——纯组合，无状态可清。
-
-**out-event** `p1_check_resolve →`
+**out-event** `dependency_check →`
 
 - alloc；`self_tag[s]`(4)、`rd_write_enable[s]`(1)
-- set；`self_tag[0]`(4)
+- serial_set payload；`self_tag[0]`(4) —— 仅在 dispatch_logic 产生 `serial_set` 时送入
+  SerialInstructionTracker；本模块不产生 `serial_set` trigger
 - write；`self_tag[s]`(4)
 - 组合读(out)；`slot0_present`(1)、`slot1_present`(1)、`serial0`(1)、`serial_inst`(1)、
   `fp0`(1)、`fp1`(1)、`slot_missed_wakeup[0/1]`(1×2)、`rsX_ready[s][x]`(1×6)、`rsX_wait_tag[s][x]`(4×6)、`rs_data_sel_t[s][x]`(7×6)
 
-**Static Info：**
+**Static Info**
 无。
