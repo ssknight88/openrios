@@ -7,21 +7,21 @@ ISQ issue 时每个源的数据有两个可能出处：entry 里存的 `rsX_data
 或本拍 lane 上的 `bypass_data[b]`（`fast_ready_rsX` 命中，绕过 entry 直接前递）。
 本模块做这个二选一，输出接 FU 的操作数输入；除源数据外的 issue payload 字段不经过本模块。
 
-### ① per-entry state
+## ① per-entry state
 
 **无。**
 
-### ② state transition & condition（event 名）
+## ② state transition & condition（event 名）
 
 **无。**
 
-### ③ condition 细化
+## ③ condition 细化
 
 **无。**
 
-### ④ data path
+## ④ data path
 
-#### 1. `fu_rsX_data`(output)
+### 1. `fu_rsX_data`(output)
 
 ```text
 hit[b]      = bypass_valid[b] ∧ (rsX_wait_tag == bypass_tag[b])      b ∈ {0..3}
@@ -34,17 +34,16 @@ fu_rsX_data = rsX_ready ? entry.rsX_data
 - 前递值**不落 entry**——落 entry 的那份是 `bypass_capture` 的事，
   归 `ISQ_Group`
 
-
-### ⑤ data structure（schema + 字段三角色）
+## ⑤ data structure（schema + 字段三角色）
 
 **无 per-entry 存储。**
 
-### ⑥ 接口
+## ⑥ 接口
 
 **in-event** `→ FU_input_mux`
 
 - 组合读(in)
-    - broadcast；`entry.rsX_data`(64×源数) —— entry 里存的源数据，二选一的一路
+  - broadcast；`entry.rsX_data`(64×源数) —— entry 里存的源数据，二选一的一路
     - broadcast；`bypass_data[b]`(64×4) —— 二选一的另一路
     - broadcast；`bypass_valid[b]`(1×4)、`bypass_tag[b]`(4×4)、`rsX_wait_tag`(4×源数)
       —— 进 `hit[b]` 比较，不留存
@@ -54,6 +53,6 @@ fu_rsX_data = rsX_ready ? entry.rsX_data
 
 - 组合读(out)；`fu_rsX_data`(64×源数) —— 接对应 FU 的操作数输入
 
-**Static Info**
+**Static Info：**
 
 无。

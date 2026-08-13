@@ -3,13 +3,13 @@
 组内只有 LSU 一个 FU，`FU_Group` 恒为 0。
 **四组中唯一带访存字段**的一组（`is_store` / `store_size`）。
 
-### ① per-entry state
+## ① per-entry state
 
 `FREE / RESIDENT`
 
 - 就是 `isq_valid` 一位：0 = FREE，1 = RESIDENT。只有一个 entry，无指针
 
-### ② state transition & condition（event 名）
+## ② state transition & condition（event 名）
 
 - FREE → RESIDENT：dispatch
 - RESIDENT → RESIDENT：dispatch（同拍发射）
@@ -17,24 +17,24 @@
 - RESIDENT → FREE：issue（本拍无 dispatch 时）
 - RESIDENT → FREE：flush
 
-### ③ condition 细化
+## ③ condition 细化
 
 - **dispatch** = `wr_en`（单向选通 fire）
-    - 写使能已在上游吸收 `isq_free_for_dispatch`，本模块**不重组第二份 ready/valid 握手**
+  - 写使能已在上游吸收 `isq_free_for_dispatch`，本模块**不重组第二份 ready/valid 握手**
     - `payload_in` 是持续组合 D 输入，只在 `wr_en = 1` 时捕获
 - **issue** = `issue_valid` ∧ `FU_ready` ∧ `!global_flush_late`
-    - `issue_valid` = `isq_valid` ∧ `operand_ready`
+  - `issue_valid` = `isq_valid` ∧ `operand_ready`
     - `operand_ready` = `(rs1_ready ∨ fast_ready_rs1) ∧ (rs2_ready ∨ fast_ready_rs2)`
       —— **本组不用 `rs3`**，不参与取与。`rs1` 是基址、`rs2` 是 store 数据
     - `fast_ready_rsX` = `!rsX_ready` ∧ OR over b∈{0..3} (`bypass_valid[b]` ∧ `rsX_wait_tag == bypass_tag[b]`)
-        - `!rsX_ready` 不可省：ready 后 `wait_tag` 保持不变，且 tag 0 是合法 tag
+      - `!rsX_ready` 不可省：ready 后 `wait_tag` 保持不变，且 tag 0 是合法 tag
         - **四条 bypass lane 全监听**——bypass 是全局广播，不按组收窄
     - `FU_ready` 是 LSU 的电平输入。组内单成员，**无索引**
 - **bypass_capture** = `isq_valid` ∧ `!global_flush_late` ∧ `!issue`
   ∧ (`fast_ready_rs1` ∨ `fast_ready_rs2`)
-    - 同拍 issue 时不捕获，只向 LSU 前递
+  - 同拍 issue 时不捕获，只向 LSU 前递
 - **flush** = `global_flush_late`
-    - 优先级最高：flush 拍不 dispatch、不 issue、不 capture，`isq_valid ← 0`
+  - 优先级最高：flush 拍不 dispatch、不 issue、不 capture，`isq_valid ← 0`
 
 **`FU_ready` 契约**：
 
@@ -59,9 +59,9 @@ isq_free_for_dispatch = !isq_valid ∨ issue        // 含同拍 issue
 代价：该投影的组合深度包含 `FU_ready` —— `FU_ready → issue → isq_free_for_dispatch`，
 消费者的准入判定要等 `FU_ready` 稳定才成立。
 
-### ④ data path
+## ④ data path
 
-#### 1. `entry` 的捕获与发射
+### 1. `entry` 的捕获与发射
 
 ```text
 dispatch 输入端口 → entry           本组 schema 的全部字段（见 ⑤）
@@ -77,14 +77,14 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - `bypass_capture` 命中时只置 `rsX_ready`，`rsX_wait_tag` 不改——否则下一拍会拿新 tag 重新匹配
 - `payload_in` 给的是完整 payload，本模块**只捕获 ⑤ 列出的字段**，其余丢弃
 
-### ⑤ data structure（schema + 字段三角色）
+## ⑤ data structure（schema + 字段三角色）
 
 - **state**：`isq_valid`
 - **header**
-    - `rs1_ready` / `rs2_ready`：`dispatch` 写初值；`bypass_capture` 命中对应源时置 1
+  - `rs1_ready` / `rs2_ready`：`dispatch` 写初值；`bypass_capture` 命中对应源时置 1
     - `rs1_wait_tag` / `rs2_wait_tag`：`dispatch` 写入，`bypass_capture` 不改
 - **payload**
-    - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
+  - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（访存偏移）
     - `is_store + store_size`：`dispatch` 写入，本模块不查
     - `self_tag`：`dispatch` 写入，本模块不查
@@ -100,23 +100,23 @@ FU_Group                              组内单成员，恒 0，无须存
 pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
 ```
 
-### ⑥ 接口
+## ⑥ 接口
 
 **in-event** `→ ISQ_Group3`
 
 - dispatch（Transaction，单向选通；ready = `isq_free_for_dispatch`，已被上游吸收；**1 写口**）
-    - move；⑤ 列出的全部字段 —— 从 `payload_in` 捕获进 entry
+  - move；⑤ 列出的全部字段 —— 从 `payload_in` 捕获进 entry
     - 触发；`wr_en`(1) —— 本拍要不要捕获 `payload_in`
 
 - bypass_capture（announce，**4 lane**）
-    - move；`bypass_data[b]`(64，b∈{0..3}) —— 命中源的 `rsX_data` 写进 entry
+  - move；`bypass_data[b]`(64，b∈{0..3}) —— 命中源的 `rsX_data` 写进 entry
     - broadcast；`bypass_valid[b]`(1，b∈{0..3})、`bypass_tag[b]`(4，b∈{0..3}) —— 与 `rsX_wait_tag` 比对，不留存
 
 - flush（announce）
-    - 触发；`global_flush_late`(1) —— 单线脉冲，`isq_valid ← 0`，无载荷
+  - 触发；`global_flush_late`(1) —— 单线脉冲，`isq_valid ← 0`，无载荷
 
 - 组合读(in)
-    - broadcast；`FU_ready`(1) —— 进 `issue` 判据，不留存
+  - broadcast；`FU_ready`(1) —— 进 `issue` 判据，不留存
 
 **out-event** `ISQ_Group3 →`
 
@@ -126,6 +126,6 @@ pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 LSU，交付语义与 ready 归集成层登记。
 
-**Static Info**
+**Static Info：**
 
 - `isq_free_for_dispatch`(1) —— `isq_valid` 与本拍 `issue` 的投影，**含同拍 `issue`**（见 ③）

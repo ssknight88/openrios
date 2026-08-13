@@ -3,23 +3,23 @@
 P1 的最终准入边界：汇总 Buffer、ISQ、CSR、flush、FP 配对和 missed-wakeup guard，
 **唯一生成 `accept[0/1]`**。保持纯组合 fire 语义，本边界不插 pipeline register。
 
-### ① per-entry state
+## ① per-entry state
 
 **无。** 纯组合，无存储。
 
-### ② state transition & condition（event 名）
+## ② state transition & condition（event 名）
 
 **无。**
 
-### ③ condition 细化
+## ③ condition 细化
 
 **无。** 零状态，无 FSM。全部组合逻辑见 ④。
 
-### ④ data path
+## ④ data path
 
 本模块无存储，只列推导。
 
-#### 1. `accept[0]` / `accept[1]`(output)
+### 1. `accept[0]` / `accept[1]`(output)
 
 ```text
 serial0_ok = !serial0 ∨ buffer_empty
@@ -55,7 +55,7 @@ accept[1] = accept[0] ∧ slot1_present ∧ slot1_guard_ok
 - `global_flush_late` 只屏蔽当拍新 fire，本模块不保存 flush 状态
 - `serial0_ok` / `slot0_guard_ok` / `slot1_guard_ok` 是内部中间量，无跨界消费者
 
-#### 2. `ib_dequeue[s]` / `isq_wr_en[g]` / `set`(output)
+### 2. `ib_dequeue[s]` / `isq_wr_en[g]` / `set`(output)
 
 ```text
 ib_dequeue[s] = accept[s]
@@ -63,16 +63,16 @@ isq_wr_en[g]  = (accept[0] ∧ select_payload[g][0]) ∨ (accept[1] ∧ select_p
 set           = accept[0] ∧ serial0
 ```
 
-### ⑤ data structure（schema + 字段三角色）
+## ⑤ data structure（schema + 字段三角色）
 
 **无 per-entry 存储。**
 
-### ⑥ 接口
+## ⑥ 接口
 
 **in-event** `→ p1_dsp`
 
 - 组合读(in)
-    - broadcast；`slot0_present`(1)、`slot1_present`(1)、`serial0`(1)、`serial_inst`(1)、
+  - broadcast；`slot0_present`(1)、`slot1_present`(1)、`serial0`(1)、`serial_inst`(1)、
       `fp0`(1)、`fp1`(1)、`slot_missed_wakeup[0/1]`(1×2) —— 全部进 ④ 的准入 guard
     - broadcast；`groups_distinct`(1) —— 进 `slot1_guard_ok`
     - broadcast；`can_alloc_1`(1)、`can_alloc_2`(1)、`buffer_empty`(1)（**拍初值**）
@@ -83,7 +83,7 @@ set           = accept[0] ∧ serial0
       本模块据此把 `accept[s]` 译码成 `isq_wr_en[g]`
 
 - flush（announce）
-    - 触发；`global_flush_late`(1) —— 单线脉冲，本拍屏蔽全部 accept，无载荷
+  - 触发；`global_flush_late`(1) —— 单线脉冲，本拍屏蔽全部 accept，无载荷
 
 **out-event** `p1_dsp →`
 
@@ -95,6 +95,6 @@ set           = accept[0] ∧ serial0
 
 四条自产信号的推导与 ready 吸收关系见 ④，本节不重复。
 
-**Static Info**
+**Static Info：**
 
 无。

@@ -3,23 +3,23 @@
 只负责 slot → ISQ group 的组合映射和同拍 group 资源扣除。
 不产生准入 event，不修改 `FU_Group`，也不搬运 payload。
 
-### ① per-entry state
+## ① per-entry state
 
 **无。**
 
-### ② state transition & condition（event 名）
+## ② state transition & condition（event 名）
 
 **无。**
 
-### ③ condition 细化
+## ③ condition 细化
 
 **无。**
 
-### ④ data path
+## ④ data path
 
-#### 1. `slot_ISQGroup[0/1]` / `groups_distinct`(output)
+### 1. `slot_ISQGroup[0/1]` / `groups_distinct`(output)
 
-**第一步 · route_class 映射**
+**第一步 · route_class 映射：**
 
 ```text
 select_group(route_class, free_view) =
@@ -44,7 +44,7 @@ LSU         slot_ISQGroup = G3          FU_Group = 0
 `select_group` 只返回确定的 group 编号，**不返回额外 valid**：固定 group 不可用时仍返回其固定编号，
 INT_ALU 在 G0、G1 都不可用时确定返回 G1——两种情形都由下游的 `isq_free_for_dispatch` guard 否决。
 
-**第二步 · slot0 / slot1 两级选择**
+**第二步 · slot0 / slot1 两级选择：**
 
 ```text
 slot_ISQGroup[0]         = select_group(route_class[0], isq_free_for_dispatch)
@@ -66,7 +66,7 @@ groups_distinct          = (slot_ISQGroup[1] != slot_ISQGroup[0])
   它**不得**依赖 `slot_ISQGroup[1]`、`groups_distinct` 或最终 `accept[1]`——
   否则本模块与其产生方之间形成组合环
 
-#### 2. `select_payload[G0..G3][0/1]`(output)
+### 2. `select_payload[G0..G3][0/1]`(output)
 
 ```text
 select_payload[g][0] = (slot_ISQGroup[0] == g)
@@ -78,16 +78,16 @@ group 冲突时固定保留 slot0 作为候选；`groups_distinct = 0` 同时阻
 
 本模块**不产生** group 级 write enable。
 
-### ⑤ data structure（schema + 字段三角色）
+## ⑤ data structure（schema + 字段三角色）
 
 **无 per-entry 存储。**
 
-### ⑥ 接口
+## ⑥ 接口
 
 **in-event** `→ p1_isq_group_select`
 
 - 组合读(in)
-    - 选通；`route_class[0/1]`(3×2) —— 决定走动态 INT 选组还是 `fixed_group()` 固定映射
+  - 选通；`route_class[0/1]`(3×2) —— 决定走动态 INT 选组还是 `fixed_group()` 固定映射
     - broadcast；`isq_free_for_dispatch[G0..G3]`(1×4) —— 选组时避开已占用的组
       （**含同拍 issue**）
     - broadcast；`slot0_fire_candidate`(1) —— slot1 选组时要知道 slot0 会不会占位
@@ -97,6 +97,6 @@ group 冲突时固定保留 slot0 作为候选；`groups_distinct = 0` 同时阻
 - 组合读(out)；`slot_ISQGroup[0/1]`(2×2)、`groups_distinct`(1)、
   `select_payload[G0..G3][0/1]`(1×8)
 
-**Static Info**
+**Static Info：**
 
 无。

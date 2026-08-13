@@ -1,20 +1,20 @@
 # commit_unit · 纯组合 · 按序退休、store drain、flush 事件裁定
 
-### ① per-entry state
-
-**无。** 
-
-### ② state transition & condition（event 名）
+## ① per-entry state
 
 **无。**
 
-### ③ condition 细化
+## ② state transition & condition（event 名）
 
-**无。** 
+**无。**
 
-### ④ data path
+## ③ condition 细化
 
-#### 1. `head0_tag` / `head1_tag`(output) 与队头资格中间量
+**无。**
+
+## ④ data path
+
+### 1. `head0_tag` / `head1_tag`(output) 与队头资格中间量
 
 ```text
 head0_tag     = Buffer_head;   head1_tag = Buffer_head + 1     // 4-bit mod16
@@ -25,11 +25,11 @@ headK_done    = headK_valid   ∧ scoreboard_exec_done_bits[headK_tag]
 
 **采样约定**：`occupancy` 是 Buffer 的**拍初值**。
 
-#### 2. `commit_valid[k]` / `commit_tag[k]` / `commit_count` / `csr_clear` / `arch_csr_write` / `store_drain_tag` / `flush_valid` / `flush_tag` / `flush_kind`(output)
+### 2. `commit_valid[k]` / `commit_tag[k]` / `commit_count` / `csr_clear` / `arch_csr_write` / `store_drain_tag` / `flush_valid` / `flush_tag` / `flush_kind`(output)
 
 **一条判定链一次定出这九项**，故并进同一节。
 
-**第一步 · head0 判定**
+**第一步 · head0 判定：**
 
 ```text
 1  !head0_valid ∨ !head0_done   提交 0，且【不评估 head1】
@@ -59,13 +59,13 @@ headK_done    = headK_valid   ∧ scoreboard_exec_done_bits[headK_tag]
 **head1 不可能是 CSR / SYS**：串行指令要求派遣时 Buffer 空，且被接受后挡死全部更年轻的派发
 ⇒ 它在 Buffer 里必然独占一格 ⇒ `occupancy == 1` ⇒ `head1_valid == 0`。
 
-**第三步 · 双FP提交阻塞**
+**第三步 · 双FP提交阻塞：**
 
 最终提交集合若会产生两笔 `rd_write_enable ∧ rd_is_fp` 的写，**缩到 1 条**（head1 留到下一拍）。
 这一条反过来是 FP 侧单写口 / 单清除口的依据。
 **阻塞只能减提交条数**，不许丢掉一笔写、也不许提前 flush 来绕开它。
 
-**第四步 · store drain 流程**
+**第四步 · store drain 流程：**
 
 - 每拍至多一条 drain 请求，且**只有 head0 能发**
 - head0 是 `exec_done` 且未请求的 store（`!scoreboard_drain_req_bits[head0_tag]`）
@@ -74,7 +74,7 @@ headK_done    = headK_valid   ∧ scoreboard_exec_done_bits[headK_tag]
 - **更年轻的非 store 不得越过一条在等 `store_done` 的 head store**
 - `store_done_exception` / `store_done_cause` 保留未实现，预期恒 0
 
-**第五步 · 提交动作**
+**第五步 · 提交动作：**
 
 对每个有效 lane：按 `rd_write_enable` / `rd_is_fp` 选 INT/FP ARF 写；
 清目的重命名表对应格的 `busy`（要求该格 `tag == commit_tag[k]`）；
@@ -88,7 +88,7 @@ tracker 会挡死全部派发 = **全机停摆**。
 而 `is_csr` / `is_mret` 是 writeback 覆盖的，来不及。
 （MRET 编码在 ALU 子码空间里，执行时只置 `is_mret`，它的 `is_csr` 是 **0**。）
 
-**判定结论**
+**判定结论：**
 
 ```text
 commit_valid[0] = head0 判定链允许本拍退休
@@ -158,7 +158,7 @@ MISPREDICT / MRET 下后者指向的是已退休的条目，用它落位会把�
 **in-event** `→ commit_unit`
 
 - 组合读(in)
-    - broadcast；`Buffer[headK_tag]` 的整条 payload（`K ∈ {0,1}`）—— **2 读口**：
+  - broadcast；`Buffer[headK_tag]` 的整条 payload（`K ∈ {0,1}`）—— **2 读口**：
       `result_data`(64)、`rd_idx`(5)、`rd_is_fp`(1)、`rd_write_enable`(1)、`is_store`(1)、
       `is_serial`(1)、事件位、CSR 字段
     - broadcast；`occupancy`(5)（**拍初值**）—— 判 `headK_present`
@@ -170,7 +170,7 @@ MISPREDICT / MRET 下后者指向的是已退休的条目，用它落位会把�
       `head1_tag = Buffer_head + 1`。
 
 - `store_done`（announce）
-    - broadcast；`store_done_tag`(4) —— 与 `head0_tag` 比对，置完成位，不留存
+  - broadcast；`store_done_tag`(4) —— 与 `head0_tag` 比对，置完成位，不留存
 
 **out-event** `commit_unit →`
 
@@ -184,6 +184,6 @@ MISPREDICT / MRET 下后者指向的是已退休的条目，用它落位会把�
 
 `commit_count` 是**非 per-lane** 字段，与 `commit_valid/tag/data` 同属 `commit` 这一个 event。
 
-**Static Info**
+**Static Info：**
 
 无。

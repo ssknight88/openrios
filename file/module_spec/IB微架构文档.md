@@ -1,16 +1,16 @@
 # IB · 8 slot FIFO（指令缓冲）
 
-### ① per-entry state
+## ① per-entry state
 
 `IDLE / RESIDENT`
 
-### ② state transition & condition（event 名）
+## ② state transition & condition（event 名）
 
 - IDLE → RESIDENT：enqueue
 - RESIDENT → IDLE：dequeue
 - ANY → IDLE：flush
 
-### ③ condition 细化
+## ③ condition 细化
 
 - **enqueue**：**采样约定——只使用拍初空位**，不使用当拍 dequeue 释放的 entry
 
@@ -32,6 +32,7 @@ inst_valid[0] = (valid_count_q >= 1)
 inst_valid[1] = (valid_count_q >= 2)        // 故 inst_valid[1] ⇒ inst_valid[0]
 deq_count     = dequeue[0] + dequeue[1]     // rptr += deq_count
 ```
+
 - `valid_count_q = (wptr - rptr) mod 16`，两个指针都是拍初寄存值，
   故其差值就是**拍初**已占用条数；次态 `valid_count = valid_count_q + enq_count - deq_count`
 - 设计不变量 `0 <= valid_count_q <= 8`，故 empty = `valid_count_q == 0`、full = `valid_count_q == 8`
@@ -48,11 +49,11 @@ deq_count     = dequeue[0] + dequeue[1]     // rptr += deq_count
 上游有义务保持不变、下一拍重新提交。**少了这条回送边，指令会静默丢失。**
 flush 拍 `accepted_slot = 00`，上游的保持义务被 redirect 取代。
 
-### ④ data path
+## ④ data path
 
 端点为**输入端口 / entry / 输出端口**三者。
 
-#### 1. `entry.IB_Payload`
+### 1. `entry.IB_Payload`
 
 ```text
 enqueue 输入端口 → entry[wptr + n]    整条 IB_Payload
@@ -61,7 +62,7 @@ entry            → 队头输出端口              整条 IB_Payload（队头 
 
 - 队头输出是**持续组合候选值**，不由 `dequeue` 选通；`dequeue` 只推进 `rptr`
 
-#### 2. `inst_valid[1:0]` / `accepted_slot[1:0]` / `room_q`(output)
+### 2. `inst_valid[1:0]` / `accepted_slot[1:0]` / `room_q`(output)
 
 ```text
 inst_valid[1:0]    ← ③
@@ -71,7 +72,7 @@ room_q             ← valid_count_q 的投影
 
 - 三项均由指针导出，不占 entry 存储
 
-### ⑤ data structure（schema + 字段三角色）
+## ⑤ data structure（schema + 字段三角色）
 
 - **state**：`IDLE / RESIDENT`，压缩进 `wptr` / `rptr`
   - 压缩进两个 4-bit 指针 `wptr` / `rptr` = `{loopbit, index[2:0]}`：
@@ -95,21 +96,21 @@ imm_valid、imm_data、pred_taken、pred_target_pc、
   BRU/MRET/FPU/LSU 为 0），**不是全局组编号**
 - `inst_valid[s]` 由 `valid_count_q` 导出，**不属于** `IB_Payload`
 
-### ⑥ 接口
+## ⑥ 接口
 
 **in-event** `→ IB`
 
 - enqueue（Transaction，**2 写口**；ready 由本模块回送的
   `accepted_slot[n]` 承担，见 ③）
-    - move；`IB_Payload[n]`(整条，n∈{0,1}) —— 存进 `entry[wptr + n]`
+  - move；`IB_Payload[n]`(整条，n∈{0,1}) —— 存进 `entry[wptr + n]`
     - 触发；`fe_valid[n]`(1，n∈{0,1}) —— 本拍 FE 给几条（两位前缀），决定写几格
 
 - ib_dequeue（Transaction，两位前缀单向选通，per slot；
   ready 已被对端吸收，本模块不重组第二份握手）
-    - 触发；`ib_dequeue[s]`(1，s∈{0,1}) —— per slot 使能，推进 `rptr`，无载荷
+  - 触发；`ib_dequeue[s]`(1，s∈{0,1}) —— per slot 使能，推进 `rptr`，无载荷
 
 - flush（announce）
-    - 触发；`global_flush_late`(1) —— 单线脉冲，指针复位（含 loopbit），无载荷
+  - 触发；`global_flush_late`(1) —— 单线脉冲，指针复位（含 loopbit），无载荷
 
 **out-event** `IB →`
 
@@ -117,6 +118,6 @@ imm_valid、imm_data、pred_taken、pred_target_pc、
 - 组合读(out)；`inst_valid[1:0]`(2)
 - 组合读(out)；`accepted_slot[1:0]`(2) —— 回压回送，见 ③ 的契约
 
-**Static Info**
+**Static Info：**
 
 - `room_q`(4) —— `valid_count_q` 的投影，只反映**拍初容量**。**不是 ready**，见 ③

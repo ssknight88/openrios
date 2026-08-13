@@ -3,24 +3,24 @@
 全库只有 G0、G1 两个组内仲裁器（G1 见 [[p3_arbiter_G1微架构文档.md]]）。
 **G2/G3 无仲裁器**：FPU / LSU 单 requester，completion 直连 lane 2/3，连线归集成层登记。
 
-### ① per-entry state
+## ① per-entry state
 
 **无。**
 
 多个 FU 同拍完成时，loser 的结果保持在 **FU-local hold/skid buffer** 中；
 该 hold state 属对应 FU，不属本模块。
 
-### ② state transition & condition（event 名）
+## ② state transition & condition（event 名）
 
 **无。**
 
-### ③ condition 细化
+## ③ condition 细化
 
 **无。**
 
-### ④ data path
+## ④ data path
 
-#### 1. `winner_grant[k]` / `loser_hold[k]` / `Result_valid` / `bypass_valid`(output)
+### 1. `winner_grant[k]` / `loser_hold[k]` / `Result_valid` / `bypass_valid`(output)
 
 **组内静态优先级**（也定义了 `FU_Group` 在本组内的取值空间）：
 
@@ -45,7 +45,7 @@ winner_grant[k] = winner_valid ∧ (winner_idx == k)
 
 - **bypass_publish** = `winner_valid`
 - **loser_hold[k]** = `request_valid[k]` ∧ `!winner_grant[k]`
-    - loser 必须**冻结整条 completion request**，下拍重试；非流水 FU（CSR / DIV）保持 busy；
+  - loser 必须**冻结整条 completion request**，下拍重试；非流水 FU（CSR / DIV）保持 busy；
       流水 FU 需由 output hold 反压影响输入接受能力，**不能覆盖或丢失 result**
     - 这条义务落在各 FU 身上，本模块只给出指示
 
@@ -102,7 +102,7 @@ is_mret
 **in-event** `→ p3_arbiter_G0`
 
 - completion request（Transaction，多对一 mux；ready = `winner_grant[k]`，loser 须 hold 重试）
-    - broadcast；`request[k]` 的 `tag`(4)、`result_data`(64) 与 `Result_Payload` 的其余字段
+  - broadcast；`request[k]` 的 `tag`(4)、`result_data`(64) 与 `Result_Payload` 的其余字段
       —— 本模块纯组合，只选一路转发，不留存
     - 触发；`request_valid[k]`(1，k∈{0,1,2}) —— 这个 requester 本拍要不要竞争
 
@@ -117,6 +117,6 @@ is_mret
 - `winner_select`；`winner_grant[k]`(1)
 - 组合读(out)；`loser_hold[k]`(1)
 
-**Static Info**
+**Static Info：**
 
 无。
