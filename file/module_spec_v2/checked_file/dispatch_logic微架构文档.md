@@ -116,6 +116,7 @@ serial_set    = accept[0] ∧ serial0
     - broadcast；`can_alloc_1`(1)、`can_alloc_2`(1)、`buffer_empty`(1)（**拍初值**）
     - broadcast；`isq_free_for_dispatch[G0..G3]`(1×4)（**含同拍 issue**）
     - broadcast；`serial_inflight_valid`(1) —— 串行指令在飞时全部stall
+    - broadcast；`self_tag[0]`(4) 仅作为 `serial_set` 的 payload
 
 - flush（announce）
     - 触发；`global_flush_late`(1) —— 单线脉冲，本拍屏蔽全部 accept
@@ -125,12 +126,12 @@ serial_set    = accept[0] ∧ serial0
 - `accept[s]`；`accept[s]`(1×2)
 - `ib_dequeue[s]`；`ib_dequeue[s]`(1×2)
 - `isq_wr_en[g]`；`isq_wr_en[g]`(1×4)
-- `serial_set`；`serial_set`(1)
+- `serial_set`；`serial_set`(1)、`self_tag[0]`(4) —— 本模块产生 trigger，转发该 tag 给
+  SerialInstructionTracker
 - 组合读(out)；`select_payload[G0..G3][0/1]`(1×8) —— 对端 p1_ISQ_input_mux ×4
 
 **Static Info**
 
 无。
-
 
 

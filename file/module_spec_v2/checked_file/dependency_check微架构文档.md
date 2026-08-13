@@ -131,7 +131,8 @@ slot_missed_wakeup[s] = OR over x∈{1,2,3} (
 **out-event** `dependency_check →`
 
 - alloc；`self_tag[s]`(4)、`rd_write_enable[s]`(1)
-- serial_set；`self_tag[0]`(4)
+- serial_set payload；`self_tag[0]`(4) —— 仅在 dispatch_logic 产生 `serial_set` 时送入
+  SerialInstructionTracker；本模块不产生 `serial_set` trigger
 - write；`self_tag[s]`(4)
 - 组合读(out)；`slot0_present`(1)、`slot1_present`(1)、`serial0`(1)、`serial_inst`(1)、
   `fp0`(1)、`fp1`(1)、`slot_missed_wakeup[0/1]`(1×2)、`rsX_ready[s][x]`(1×6)、`rsX_wait_tag[s][x]`(4×6)、`rs_data_sel_t[s][x]`(7×6)

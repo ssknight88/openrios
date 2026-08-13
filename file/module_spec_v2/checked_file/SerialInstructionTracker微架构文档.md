@@ -1,4 +1,4 @@
-# CSR_control · {valid, tag}
+# SerialInstructionTracker · {valid, tag}
 
 ### ① per-entry state
 
@@ -33,9 +33,6 @@
     - 承担一切**不提交**路径的解除：非法 CSR 异常、队头被中断抢占
       （待补的 ECALL / EBREAK 同走此口）
     - MRET 提交后 flush：clear 与 flush 同拍都写 `valid ← 0`，次态一致
-- **出口闭合**：置位过的每一条串行指令，要么提交（tag 命中 → clear）、
-  要么不提交（必产生 flush）——两条出口对置位集合闭合，不存在置位后无出口的指令
-
 ### ④ data path
 
 #### 1. `serial_inflight_tag`
@@ -54,7 +51,7 @@ clear 与 flush 只写 `valid ← 0`，载荷宽度为零，不构成运值边�
 
 ### ⑥ 接口
 
-**in-event** `→ CSR_control`
+**in-event** `→ SerialInstructionTracker`
 
 - serial_set（Transaction ×1；ready = `!serial_inflight_valid`，已被上游吸收）
     - move；`self_tag[0]`(4) —— 存入 `serial_inflight_tag`
@@ -67,7 +64,7 @@ clear 与 flush 只写 `valid ← 0`，载荷宽度为零，不构成运值边�
 - flush（announce）
     - 触发；`global_flush_late`(1) —— 单线脉冲，`valid ← 0`，无载荷
 
-**out-event** `CSR_control →`
+**out-event** `SerialInstructionTracker →`
 
 无
 

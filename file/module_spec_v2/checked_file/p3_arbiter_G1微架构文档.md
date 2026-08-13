@@ -52,11 +52,18 @@ winner_grant[k] = winner_valid ∧ (winner_idx == k)
 此后不得对旧 tag 再发 `Result_valid`；completion request 相对 issue 至少寄存一拍）
 同 [[p3_arbiter_G0微架构文档.md]] ④，全 4 lane 通用。
 
-#### 2. `tag_out` / `bypass_tag` / `bypass_data`(output)
+#### 2. `tag_out` / `bypass_tag` / `bypass_data` / completion 事件字段(output)
 
 ```text
 tag_out      = winner_valid ? request[winner_idx].tag         : 0
 Result_valid = winner_valid
+
+exception_flag       = 0
+exception_cause      = 0
+exception_tval       = 0
+mispredict_flag      = 0
+mispredict_target_pc = 0
+is_mret              = 0
 
 bypass_valid = winner_valid
 bypass_tag   = winner_valid ? request[winner_idx].tag         : 0
@@ -75,13 +82,15 @@ bypass_data  = winner_valid ? request[winner_idx].result_data : 0
 **in-event** `→ p3_arbiter_G1`
 
 - completion request（Transaction，多对一 mux；ready = `winner_grant[k]`，loser 须 hold 重试）
-    - broadcast；`request[k]` 的 `tag`(4)、`result_data`(64)
+    - broadcast；`request[k]` 的 `tag`(4)、`result_data`(64)。G1 不产生异常、跳转或 MRET，
+      对应 completion 事件字段恒为 0
       —— 本模块纯组合，只选一路转发，不留存
     - 触发；`request_valid[k]`(1，k∈{0,1}) —— 这个 requester 本拍要不要竞争
 
 **out-event** `p3_arbiter_G1 →`
 
-- writeback；`result_data`(64)、`tag_out`(4)、`Result_valid`(1)
+- writeback；`result_data`(64)、`tag_out`(4)、`Result_valid`(1)、`exception_flag`(1)、
+  `exception_cause`、`exception_tval`、`mispredict_flag`(1)、`mispredict_target_pc`(64)、`is_mret`(1)
 - exec_done；`tag_out`(4)、`Result_valid`(1)
 - `bypass_publish`；`bypass_valid`(1)、`bypass_tag`(4)、`bypass_data`(64)
 - `winner_select`；`winner_grant[k]`(1)

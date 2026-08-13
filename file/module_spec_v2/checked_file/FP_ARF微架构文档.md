@@ -17,7 +17,7 @@
 #### 1. `entry.ARF`
 
 ```text
-write 输入端口             → entry[rd_idx[k]]   result_data
+write 输入端口             → entry[rd_idx[k]]   commit_data
 entry[fp_read_idx[1:3]]   → 读出端口            ARF 值
 ```
 
@@ -44,7 +44,7 @@ write[k] = commit_valid[k] ∧ rd_write_enable[k] ∧ rd_is_fp[k]
 **in-event** `→ FP_ARF`
 
 - commit（announce，**1 写口**）
-    - move；`result_data[k]`(64，k∈{0,1}) —— 写进 `entry[rd_idx[k]]`
+    - move；`commit_data[k]`(64，k∈{0,1}) —— 写进 `entry[rd_idx[k]]`
     - broadcast；`rd_is_fp[k]`(1，k∈{0,1})、`rd_write_enable[k]`(1，k∈{0,1}) —— 只进本模块 ④ 的写使能判据
     - 触发；`commit_valid[k]`(1，k∈{0,1}) —— 本拍要不要写（双FP提交阻塞保证至多一笔）
     - 地址；`rd_idx[k]`(5，k∈{0,1}) —— 写第几格

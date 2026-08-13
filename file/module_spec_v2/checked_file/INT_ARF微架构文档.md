@@ -17,7 +17,7 @@
 #### 1. `entry.ARF`
 
 ```text
-write 输入端口              → entry[rd_idx[k]]   result_data
+write 输入端口              → entry[rd_idx[k]]   commit_data
 entry[slot0/1.rs1/2_idx]   → 读出端口            ARF 值
 ```
 
@@ -46,7 +46,7 @@ write[k] = commit_valid[k] ∧ rd_write_enable[k] ∧ !rd_is_fp[k] ∧ rd_idx[k]
 **in-event** `→ INT_ARF`
 
 - commit（announce，**2 写口**）
-    - move；`result_data[k]`(64，k∈{0,1}) —— 写进 `entry[rd_idx[k]]`
+    - move；`commit_data[k]`(64，k∈{0,1}) —— 写进 `entry[rd_idx[k]]`
     - broadcast；`rd_is_fp[k]`(1，k∈{0,1})、`rd_write_enable[k]`(1，k∈{0,1}) —— 只进本模块 ④ 的写使能判据
     - 触发；`commit_valid[k]`(1，k∈{0,1}) —— 本拍这个 lane 要不要写
     - 地址；`rd_idx[k]`(5，k∈{0,1}) —— 写第几格
