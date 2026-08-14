@@ -1,7 +1,7 @@
 # ISQ_Group3 · LSU 组 · 单 entry
 
 组内只有 LSU 一个 FU，`FU_Group` 恒为 0。
-**唯一带访存字段**的一组（`is_store` / `store_size` / `store_mask`）。
+**带访存字段**的一组（`is_store` / `store_size`）。
 
 ## ① per-entry state
 
@@ -79,9 +79,8 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - **payload**
   - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（访存偏移）
-    - `is_store + store_size + store_mask`：`dispatch` 写入，本模块不查
-      - `store_size` 为 3 bit 访存宽度编码
-      - `store_mask` 为 8 bit 字节 lane mask，随 LSU 请求结构透传
+    - `is_store + store_size`：`dispatch` 写入，本模块不查
+      - `store_size` 为 3 bit 访存宽度编码，保留原始 decode 宽度信息
     - `self_tag`：`dispatch` 写入，本模块不查
     - **子码 / Full Decode 控制信号**：`dispatch` 写入，**位宽与编码待定**
 
@@ -114,7 +113,7 @@ pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
 **out-event** `ISQ_Group3 →`
 
 - issue；`rs1_data`(64)、`rs2_data`(64)、`imm_valid`(1)、`imm_data`(64)、
-  `is_store`(1)、`store_size`(3)、`store_mask`(8)、`self_tag`(4)、子码
+  `is_store`(1)、`store_size`(3)、`self_tag`(4)、子码
 
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 LSU，交付语义与 ready 归集成层登记。

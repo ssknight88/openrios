@@ -67,7 +67,7 @@ commit 只写 `busy ← 0`、`tag` 不动，载荷宽度为零，不构成一条
   - 触发；`global_flush_late`(1) —— 单线脉冲，`busy`全清
 
 - 组合读(in)
-    - 地址；`slot0/1.rs1/2_idx`(5×4) —— 四个读口
+  - 地址；`slot0/1.rs1/2_idx`(5×4) —— 四个读口
 
 **out-event** `INT_tag_mapping →`
 
