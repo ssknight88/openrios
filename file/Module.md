@@ -24,7 +24,7 @@ P0 前后端边界的有序指令缓冲，深度为8
 
 ### CompletionSCB — 裁决中枢
 
-职责：跟踪每个 tag 的生命周期（在飞、执行完、store 排空）；保存裁决所需的全部事件字段（mispredict、exception、is_store、is_serial，以及 CSR 写回内容）；每拍对队头做按序退休判定，决定提交几条、要不要 flush、store 何时排空；产出退休侧全部控制信号——commit valid/tag/条数、csr_clear（送 tracker）、排空请求、flush 三元组。
+职责：跟踪每个 tag 的生命周期（在飞、执行完、store 排空）；保存裁决所需的事件字段（mispredict、exception、is_store、is_mret）；每拍对队头做按序退休判定，决定提交几条、要不要 flush、store 何时排空；产出退休侧全部控制信号——commit valid/tag/条数、排空请求、flush 三元组。
 
 另有两条对外供给：为 Flush_Model 提供按 flush_tag 索引的恢复上下文读口（mispredict 目标 PC、exception 的 cause/tval）；为 P1 导出 valid/exec_done 两条向量，供派发前判断唤醒窗口是否已错过。
 
