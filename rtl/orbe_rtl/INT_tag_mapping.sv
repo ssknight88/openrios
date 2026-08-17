@@ -63,20 +63,35 @@ module INT_tag_mapping #(
     endfunction
 
     always_comb begin
-        slot0_rs1_tag  = read_tag(slot0_rs1_idx);
-        slot0_rs1_busy = read_busy(slot0_rs1_idx);
-        slot0_rs2_tag  = read_tag(slot0_rs2_idx);
-        slot0_rs2_busy = read_busy(slot0_rs2_idx);
-        slot1_rs1_tag  = read_tag(slot1_rs1_idx);
-        slot1_rs1_busy = read_busy(slot1_rs1_idx);
-        slot1_rs2_tag  = read_tag(slot1_rs2_idx);
-        slot1_rs2_busy = read_busy(slot1_rs2_idx);
+        if (!rst_n) begin
+            slot0_rs1_tag  = '0;
+            slot0_rs1_busy = 1'b0;
+            slot0_rs2_tag  = '0;
+            slot0_rs2_busy = 1'b0;
+            slot1_rs1_tag  = '0;
+            slot1_rs1_busy = 1'b0;
+            slot1_rs2_tag  = '0;
+            slot1_rs2_busy = 1'b0;
+        end else begin
+            slot0_rs1_tag  = read_tag(slot0_rs1_idx);
+            slot0_rs1_busy = read_busy(slot0_rs1_idx);
+            slot0_rs2_tag  = read_tag(slot0_rs2_idx);
+            slot0_rs2_busy = read_busy(slot0_rs2_idx);
+            slot1_rs1_tag  = read_tag(slot1_rs1_idx);
+            slot1_rs1_busy = read_busy(slot1_rs1_idx);
+            slot1_rs2_tag  = read_tag(slot1_rs2_idx);
+            slot1_rs2_busy = read_busy(slot1_rs2_idx);
+        end
     end
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (int i = 0; i < NUM_ENTRIES; i++) begin
                 tag_q[i]  <= '0;
+                busy_q[i] <= 1'b0;
+            end
+        end else if (global_flush_late) begin
+            for (int i = 0; i < NUM_ENTRIES; i++) begin
                 busy_q[i] <= 1'b0;
             end
         end else begin
@@ -94,12 +109,6 @@ module INT_tag_mapping #(
             if (accept1 && alloc_rd_write_enable1 && !alloc_rd_is_fp1 && alloc_rd_idx1 != '0) begin
                 busy_q[alloc_rd_idx1] <= 1'b1;
                 tag_q[alloc_rd_idx1]  <= self_tag1;
-            end
-
-            if (global_flush_late) begin
-                for (int i = 0; i < NUM_ENTRIES; i++) begin
-                    busy_q[i] <= 1'b0;
-                end
             end
         end
     end

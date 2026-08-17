@@ -60,12 +60,21 @@ module FP_tag_mapping #(
     endfunction
 
     always_comb begin
-        fp_read_tag1  = read_tag(fp_read_idx1);
-        fp_read_busy1 = read_busy(fp_read_idx1);
-        fp_read_tag2  = read_tag(fp_read_idx2);
-        fp_read_busy2 = read_busy(fp_read_idx2);
-        fp_read_tag3  = read_tag(fp_read_idx3);
-        fp_read_busy3 = read_busy(fp_read_idx3);
+        if (!rst_n) begin
+            fp_read_tag1  = '0;
+            fp_read_busy1 = 1'b0;
+            fp_read_tag2  = '0;
+            fp_read_busy2 = 1'b0;
+            fp_read_tag3  = '0;
+            fp_read_busy3 = 1'b0;
+        end else begin
+            fp_read_tag1  = read_tag(fp_read_idx1);
+            fp_read_busy1 = read_busy(fp_read_idx1);
+            fp_read_tag2  = read_tag(fp_read_idx2);
+            fp_read_busy2 = read_busy(fp_read_idx2);
+            fp_read_tag3  = read_tag(fp_read_idx3);
+            fp_read_busy3 = read_busy(fp_read_idx3);
+        end
 
         alloc_valid = 1'b0;
         alloc_idx   = '0;
@@ -94,10 +103,14 @@ module FP_tag_mapping #(
         end
     end
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (int i = 0; i < NUM_ENTRIES; i++) begin
                 tag_q[i]  <= '0;
+                busy_q[i] <= 1'b0;
+            end
+        end else if (global_flush_late) begin
+            for (int i = 0; i < NUM_ENTRIES; i++) begin
                 busy_q[i] <= 1'b0;
             end
         end else begin
@@ -108,12 +121,6 @@ module FP_tag_mapping #(
             if (alloc_valid) begin
                 busy_q[alloc_idx] <= 1'b1;
                 tag_q[alloc_idx]  <= alloc_tag;
-            end
-
-            if (global_flush_late) begin
-                for (int i = 0; i < NUM_ENTRIES; i++) begin
-                    busy_q[i] <= 1'b0;
-                end
             end
         end
     end

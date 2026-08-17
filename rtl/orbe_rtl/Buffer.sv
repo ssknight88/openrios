@@ -29,12 +29,21 @@ module Buffer #(
     logic [DATA_W-1:0] buffer_mem [0:NUM_ENTRIES-1];
 
     always_comb begin
-        commit_data0 = buffer_mem[head0_tag];
-        commit_data1 = buffer_mem[head1_tag];
+        if (!rst_n) begin
+            commit_data0 = '0;
+            commit_data1 = '0;
+        end else begin
+            commit_data0 = buffer_mem[head0_tag];
+            commit_data1 = buffer_mem[head1_tag];
+        end
     end
 
-    always_ff @(posedge clk) begin
-        if (rst_n) begin
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            for (int i = 0; i < NUM_ENTRIES; i++) begin
+                buffer_mem[i] <= '0;
+            end
+        end else begin
             if (result_valid0) begin
                 buffer_mem[tag_out0] <= result_data0;
             end

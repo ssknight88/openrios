@@ -21,11 +21,19 @@ module PC_File #(
     logic [DATA_W-1:0] pc_mem [0:NUM_ENTRIES-1];
 
     always_comb begin
-        inst_pc = pc_mem[flush_tag];
+        if (!rst_n) begin
+            inst_pc = '0;
+        end else begin
+            inst_pc = pc_mem[flush_tag];
+        end
     end
 
-    always_ff @(posedge clk) begin
-        if (rst_n) begin
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            for (int i = 0; i < NUM_ENTRIES; i++) begin
+                pc_mem[i] <= '0;
+            end
+        end else begin
             if (accept0) begin
                 pc_mem[self_tag0] <= pc0;
             end

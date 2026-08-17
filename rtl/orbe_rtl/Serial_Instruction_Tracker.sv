@@ -22,7 +22,7 @@ module Serial_Instruction_Tracker #(
     wire commit_hit0 = serial_inflight_valid && commit_valid0 && (commit_tag0 == serial_inflight_tag);
     wire commit_hit1 = serial_inflight_valid && commit_valid1 && (commit_tag1 == serial_inflight_tag);
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             serial_inflight_valid <= 1'b0;
             serial_inflight_tag   <= '0;

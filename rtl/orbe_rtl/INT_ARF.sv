@@ -38,14 +38,25 @@ module INT_ARF #(
     endfunction
 
     always_comb begin
-        slot0_rs1_data = read_rf(slot0_rs1_idx);
-        slot0_rs2_data = read_rf(slot0_rs2_idx);
-        slot1_rs1_data = read_rf(slot1_rs1_idx);
-        slot1_rs2_data = read_rf(slot1_rs2_idx);
+        if (!rst_n) begin
+            slot0_rs1_data = '0;
+            slot0_rs2_data = '0;
+            slot1_rs1_data = '0;
+            slot1_rs2_data = '0;
+        end else begin
+            slot0_rs1_data = read_rf(slot0_rs1_idx);
+            slot0_rs2_data = read_rf(slot0_rs2_idx);
+            slot1_rs1_data = read_rf(slot1_rs1_idx);
+            slot1_rs2_data = read_rf(slot1_rs2_idx);
+        end
     end
 
-    always_ff @(posedge clk) begin
-        if (rst_n) begin
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            for (int i = 0; i < NUM_ENTRIES; i++) begin
+                rf[i] <= '0;
+            end
+        end else begin
             if (commit_valid0 && commit_rd_write_enable0 && !commit_rd_is_fp0 && commit_rd_idx0 != '0) begin
                 rf[commit_rd_idx0] <= commit_data0;
             end

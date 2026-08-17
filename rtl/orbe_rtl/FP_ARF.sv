@@ -36,9 +36,15 @@ module FP_ARF #(
     endfunction
 
     always_comb begin
-        fp_read_data1 = read_rf(fp_read_idx1);
-        fp_read_data2 = read_rf(fp_read_idx2);
-        fp_read_data3 = read_rf(fp_read_idx3);
+        if (!rst_n) begin
+            fp_read_data1 = '0;
+            fp_read_data2 = '0;
+            fp_read_data3 = '0;
+        end else begin
+            fp_read_data1 = read_rf(fp_read_idx1);
+            fp_read_data2 = read_rf(fp_read_idx2);
+            fp_read_data3 = read_rf(fp_read_idx3);
+        end
 
         write_valid = 1'b0;
         write_idx   = '0;
@@ -54,8 +60,12 @@ module FP_ARF #(
         end
     end
 
-    always_ff @(posedge clk) begin
-        if (rst_n) begin
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            for (int i = 0; i < NUM_ENTRIES; i++) begin
+                rf[i] <= '0;
+            end
+        end else begin
             if (write_valid) begin
                 rf[write_idx] <= write_data;
             end
