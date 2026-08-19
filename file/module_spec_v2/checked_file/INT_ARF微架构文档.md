@@ -1,4 +1,4 @@
-# INT_ARF · 32 格 × 64 位 · 整数架构寄存器堆
+# INT_ARF · 32 entry × 64 bit · 整数架构寄存器堆
 
 ### ① per-entry state
 

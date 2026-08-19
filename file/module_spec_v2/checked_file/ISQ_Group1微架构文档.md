@@ -79,19 +79,21 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - **header**
     - `rs1_ready` / `rs2_ready`：`dispatch` 写初值；`bypass_capture` 命中对应源时置 1
     - `rs1_wait_tag` / `rs2_wait_tag`：`dispatch` 写入，`bypass_capture` 不改
-    - `FU_Group`：`dispatch` 写入。取值 `{0,1}`，用于选组内 FU 并原样送给 FU 自译
+    - `FU_Group`(2)：`dispatch` 写入。取值 `{0,1}`，用于选组内 FU 并原样送给 FU 自译
 - **payload**
     - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（ALU 立即数型）
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入，**位宽与编码待定**
+    - `exe_subop`(24)：`dispatch` 写入并原样发射；编码见集成层唯一 schema。
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 
 ```text
 rs3_ready / rs3_wait_tag / rs3_data   本组无三源指令
-pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
-is_store / store_size                 访存字段，只有 LSU 用
+pc / inst_bits / is_compressed / pred_taken / pred_target_pc
+                                      指令身份与分支预测字段，只有 BRU 用
+is_store / mem_funct3 / rd_is_fp      访存字段，只有 LSU 用
+full_decode(17)                       Full Decode 控制字段，G1 无消费者
 ```
 
 ### ⑥ 接口
@@ -114,8 +116,8 @@ is_store / store_size                 访存字段，只有 LSU 用
 
 **out-event** `ISQ_Group1 →`
 
-- issue；`rs1_data`(64)、`rs2_data`(64)、`FU_Group`(1)、`imm_valid`(1)、`imm_data`(64)、
-  `self_tag`(4)、子码
+- issue；`rs1_data`(64)、`rs2_data`(64)、`FU_Group`(2)、`imm_valid`(1)、`imm_data`(64)、
+  `self_tag`(4)、`exe_subop`(24)
 
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 FU，交付语义与 ready 归集成层登记。

@@ -1,4 +1,4 @@
-# Buffer · 16 格 × 64 位
+# Buffer · 16 entry × 64 bit
 
 ### ① per-entry state
 

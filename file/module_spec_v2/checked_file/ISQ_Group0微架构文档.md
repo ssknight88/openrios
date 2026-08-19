@@ -86,14 +86,22 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
     - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（ALU 立即数型、CSR 的 `uimm` 型）
     - `pc + pred_taken + pred_target_pc`：`dispatch` 写入，BRU 判 mispredict 用
+    - `is_compressed`：`dispatch` 写入，本模块不查。BRU 按它算链接地址与
+      分支 fall-through 目标（压缩取 `pc + 2`、否则 `pc + 4`）
+    - `inst_bits`(32)：`dispatch` 写入，本模块不查。本条指令的原始编码，
+      与 `pc` 同属"指令身份"。唯一消费者是本组的 ILLEGAL 子码——非法指令的
+      `tval` 要写出错指令的编码，压缩指令只取低 16 位（由 `is_compressed` 指明）
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入,
-      **位宽与编码待定**
+    - `exe_subop`(24)：`dispatch` 写入并原样发射；编码见集成层唯一 schema。
+    - `full_decode`(17)：`{csr_write_intent, illegal, rm[2:0], csr_addr[11:0]}`；
+      本组 CSR 消费 `csr_addr` 与 `csr_write_intent`，ILLEGAL 消费 `illegal`，其余忽略。
+      **`csr_write_intent` 只有本组用**——它是 `CSRRS`/`CSRRC` 在 `rs1_idx == x0` 时
+      "读而不写"的唯一判据，后端推导不出来（payload 只带 `rs1_data`，不带 `rs1_idx`）
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 ```text
 rs3_ready / rs3_wait_tag / rs3_data   本组无三源指令
-is_store / store_size                 访存字段，只有 LSU 用
+is_store / mem_funct3 / rd_is_fp      访存字段，只有 LSU 用
 ```
 
 ### ⑥ 接口
@@ -117,7 +125,8 @@ is_store / store_size                 访存字段，只有 LSU 用
 **out-event** `ISQ_Group0 →`
 
 - issue；`rs1_data`(64)、`rs2_data`(64)、`FU_Group`(2)、`imm_valid`(1)、`imm_data`(64)、
-  `pc`(64)、`pred_taken`(1)、`pred_target_pc`(64)、`self_tag`(4)、子码
+  `pc`(64)、`inst_bits`(32)、`is_compressed`(1)、`pred_taken`(1)、`pred_target_pc`(64)、
+  `self_tag`(4)、`exe_subop`(24)、`full_decode`(17)
 
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 FU，交付语义与 ready 归集成层登记。

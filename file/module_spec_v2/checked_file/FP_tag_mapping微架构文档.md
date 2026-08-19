@@ -54,6 +54,7 @@ commit 只写 `busy ← 0`、`tag` 不动，载荷宽度为零，不构成一条
 - alloc（announce，**1 写口**）
     - move；`self_tag[s]`(4，s∈{0,1}) —— 存入 `entry[rd_idx[s]]` 的 `tag`
     - broadcast；`rd_write_enable[s]`(1，s∈{0,1})、`rd_is_fp[s]`(1，s∈{0,1}) —— 只进本模块 ③ 的 alloc判定
+    - 触发；`accept[s]`(1，s∈{0,1}) —— alloc[s] = accept[s] ∧ …（判据见 ③）
     - 地址；`rd_idx[s]`(5，s∈{0,1}) —— 写第几entry
 
 - commit（announce，**1 清除口**）

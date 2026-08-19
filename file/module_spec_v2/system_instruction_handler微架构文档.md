@@ -4,35 +4,23 @@ scoreboard 组的第四个子模块（与 CompletionSCB、flush_model、SerialIn
 系统指令的**退休效应**在此落笔——裁决仍在 [[CompletionScoreboard微架构文档.md]] 的判定链，
 本模块只负责"生效"。由原 csr_file（架构 CSR 寄存器堆与特权态）与原 SCB 的 `csr_stage`
 （CSR 写意图暂存）合并而成：**架构寄存器 flush 不动；`csr_stage` 是本模块唯一投机寄存器，
-随 flush 作废。** 接口按消费者分侧组织：执行侧 / 写回侧 / 退休侧 / flush 侧 / 顶层。
+随 flush 作废。**
 
 ### ① per-entry state
 
-**架构组无阶段 + `csr_stage` 两态。** 寄存器清单分四块：
+`EMPTY / STAGED` —— **本模块只有 `csr_stage` 有状态**。
 
-- **trap / 特权组**：`mstatus`（MIE / MPIE / MPP）、`mepc`、`mcause`、`mtval`、`mtvec`、
-  `mscratch`、`mie`、`mip`，加 `current_priv`——**它不是 CSR**：无 12-bit 地址、
-  软件读写不到（RISC-V 故意不提供"当前特权级"查询口），只随 trap / MRET 变化。
-  **当前实现恒 M**；U 态待补
-- **最小合规组**：`mhartid` / `mvendorid` / `marchid` / `mimpid` / `misa` ——
-  硬连只读，全部读 0（`misa = 0` 是 spec 允许的"未实现"口径；`mhartid = 0` 即 hart 0）；
-  `mcycle` / `minstret` —— 真 64 位计数器，可软件写
-- **csr_stage** = `{valid(1), tag(4), csr_addr(12), csr_wdata(64)}` ——
-  全库唯一的 CSR 写意图暂存，串行化"至多一条在飞"不变量的直接编码
-- **待补挂点**（系统指令的 charter 归属本模块）：
-  - `fcsr`（`frm` / `fflags`）与 `mstatus.FS`（F/D 支持需要）
-  - U 态特权检查与 ECALL cause 细则（8/11 之分）
-  - ECALL / EBREAK / FENCE / WFI 的路由与子码——见 [[IB微架构文档.md]] ⑤ 待补注记，
-    缓行期译码按非法指令 trap
-  - FENCE.I：可实现为无条件 `mispredict_flag = 1`、`target = pc + 4`（压缩 `pc + 2`），
-    复用 MISPREDICT flush
-  - SFENCE.VMA：S 态，远期
+- 就是 `csr_stage.valid` 一位：0 = EMPTY，1 = STAGED。它是全库唯一的 CSR 写意图暂存，
+  也是本模块唯一的投机寄存器，随 flush 作废
+- **单寄存器容量的依据**：串行化 ⇒ 写意图同时存在量至多为 1，per-tag ×16 是纯浪费
+- **架构寄存器组无阶段**——它们只有值、没有生命周期，flush 一律不动。
+  寄存器清单与三角色见 ⑤
 
 ### ② state transition & condition（event 名）
 
 - csr_stage：EMPTY → STAGED：capture；STAGED → EMPTY：apply / flush
-- 架构组**无阶段转移**，写 event 三类：apply（软件写落笔）/ `trap_entry` / `mret_update`；
-  另计数器自增（内部）
+- 架构组**无阶段转移**，写 event 四类：apply（软件写落笔）/ `trap_entry` / `mret_update` /
+  `fflags_accrue`（FP 退休累加）；另计数器自增（内部）
 
 ### ③ condition 细化
 
@@ -69,10 +57,30 @@ csr_stage.valid_d = (global_flush_late ∨ apply_fire) ? 0 :
   CSR 写仍生效，`csr_stage.valid_d` 仍清 0。当前串行不变量下该组合不可达：外部中断抢占时
   `commit_valid=0`，MRET 不 capture，CSR 在飞时不可能有更年轻的分支误预测
 - v2 的跨模块事件 `arch_csr_write` **消亡**——捕获与落笔同居本模块后降级为内部一行
-- **本模块不复判合法性**：非法写在执行侧已被 csr_fu 判为异常（见 ⑥ 执行侧契约）
+- **本模块不复判合法性**：非法写在执行侧已被 csr_fu 判为异常
 - **命中硬连组时写被静默忽略**（WARL 口径）：`misa` 等在可写地址空间且已实现，
   csr_fu 的非法判据拦不住——该写合法到达，但硬连组无存储，落笔即丢弃
 - 命中 `mcycle` / `minstret` 时**软件写当拍覆盖自增**
+
+**apply 不是整字覆盖**——逐寄存器按可写位掩码落笔，未列位保持原值或读 0：
+
+```text
+mstatus   可写 MIE(3)、MPIE(7)、FS(14:13)
+          MPP(12:11) 写任何值均钳到 M（M-only；U 态落地前不接受其它值）
+          SD(63) 是派生只读位 = (FS == Dirty)，**不是存储位、不得 sticky**
+mie       只实现 MEIE(11) / MTIE(7) / MSIE(3)，其余位读 0
+mtvec     只实现 Direct 模式 ⇒ 写入规范化为 {wdata[63:2], 2'b00}
+          不得出现"读回 MODE=1 却无 vectored 语义"
+mepc      可写位由 IALIGN 决定，与 ENABLE_C 同源：
+          ENABLE_C = 1（IALIGN=16）⇒ 可写 [63:1]，只有 [0] 恒 0
+          ENABLE_C = 0（IALIGN=32）⇒ 可写 [63:2]，[1:0] 恒 0
+mcause / mtval / mscratch / mcycle / minstret     全字可写
+mip       全只读（见 ③ 电平节），csrw 静默忽略
+硬连只读组（mhartid / mvendorid / marchid / mimpid / misa）   写静默忽略
+```
+
+**`mepc[1]` 那一位不是可选放宽，是 C 的硬要求**：启用 C 之后指令可以落在 2 字节边界上，
+`mepc` 必须能表示这种 PC，否则从压缩指令上取的 trap 返回地址会被截错。
 
 #### 硬件写（trap 边界，flush_model 的 `trap_state_write` 驱动）
 
@@ -98,6 +106,35 @@ mret_update   kind == MRET
 - 各场景取舍：异常 / 中断只发生 trap 侧写入（异常指令与被中断的指令都不提交）；
   MRET 只执行 `mret_update`；MISPREDICT 两条都不写；正常提交 CSR 指令只执行 apply
 
+#### FP 退休累加（`fflags_accrue`）
+
+```text
+提交拍对每条有效 commit lane 的 fflags 按位或进架构 fflags：
+fflags ← fflags | (commit_valid[0] ? commit_fflags[0] : 0)
+                | (commit_valid[1] ? commit_fflags[1] : 0)
+
+fp_dirty = (commit_valid[0] ∧ ((rd_write_enable[0] ∧ rd_is_fp[0]) ∨ commit_fflags[0] != 0))
+         ∨ (commit_valid[1] ∧ ((rd_write_enable[1] ∧ rd_is_fp[1]) ∨ commit_fflags[1] != 0))
+mstatus.FS ← fp_dirty ? Dirty : mstatus.FS
+mstatus.SD    派生只读，恒 = (mstatus.FS == Dirty)，不参与本次写
+```
+
+- **两条 lane 直接按位或、无需仲裁**：fflags 是 sticky OR、可交换；同拍两条 lane
+  都可能非零（写整数 rd 的 FP 比较 / 转换也产标志），OR 合并天然正确
+- **FS 脏判据**：**真的写了** FP 寄存器（`rd_write_enable ∧ rd_is_fp`）或产生了非零 fflags。
+  `FMV.X.W` / `FCLASS`（rd 整数、fflags=0）不置脏；FP store（`use_rd = 0`）也不置脏——
+  **必须用 `rd_write_enable` 限定**，否则不写 rd 的指令上一个无意义的 `rd_is_fp`
+  会误置脏。误置脏在架构上无害（只是多存一次 FP 上下文），但判据要写准
+- **`FS` 只做单向的 `→ Dirty`**：本路径永远不会把 `FS` 置成 `Off`，也解不掉 `Off`。
+  这一条是 `dispatch_logic` 在派遣拍读 `fs_enabled` 得以安全的依据之一——
+  详见该文档 ④#1 的时序论证
+- **陷入 Illegal 的 FP 指令不更新 `fflags` / `FS`**：它已改道 G0 的 ILLEGAL 路径，
+  `fpu_fflags` 恒 0 且不提交，两条路都到不了这里
+- **`trap_entry` / `mret_update` 不触碰 `FS` 与 `frm`**：见 ④ 的硬件写节，
+  两者只动 `mstatus` 的 MIE/MPIE/MPP 与 trap 三样
+- **软件写 `fflags` / `frm` / `fcsr` 地址时**，apply 路径自身置 `FS ← Dirty`；CSR 读不置脏
+- **单写口够用**：CSR 指令串行 ⇒ 其提交拍不会有 FP 指令同拍退休累加，软件写与累加不撞同拍
+
 #### 计数器
 
 ```text
@@ -107,9 +144,24 @@ minstret 每拍 += commit_count        // SCB 的退休条数，0..2
 
 软件写命中当拍，写值覆盖自增结果。
 
-#### 电平
+#### 电平（`mip`）
 
-- `mip` 的外部中断位由顶层电平**直接驱动**，不经任何 event；软件可写位才走软件写
+**M-only 下 `mip` 整个只读、无存储**——它是三根顶层电平的组合视图，`csrw mip` 静默忽略
+（与硬连组同口径）。RISC-V 里 `mip` 可软件写的只有 S 态那几位，本实现没有 S 态。
+
+```text
+mip[11] = MEIP      外部中断
+mip[7]  = MTIP      定时器中断
+mip[3]  = MSIP      软件中断
+其余位读 0；mie 也只实现 MEIE(11) / MTIE(7) / MSIE(3) 三位
+```
+
+- **顶层供三根电平**，未接的顶层置 0（当前只接外部中断时，`interrupt_cause` 自然恒为 MEI）
+- **电平的稳定性契约**（顶层义务）：送进来的三根必须**已跨时钟域同步**；
+  源若可能是短脉冲，须在上游锁存成 pending level。否则会漏中断
+- **cause 必须在选中拍锁存**：SCB 判定链选中中断时，`interrupt_cause` 要随 flush / trap event
+  一并锁存，**不得等到 `trap_entry` 拍再重新组合 `mie & mip`**——电平在这两拍之间可能已变，
+  重新组合会取到错的 cause
 
 #### flush
 
@@ -153,79 +205,101 @@ CSR[csr_addr] → 读出端口    旧值（1 读口）
 ```
 
 - 硬连组按地址返回常量；trap 组 / 计数器返回寄存器现值
-- 未实现地址的读出值为 0——但**该读永远不该被采用**：csr_fu 在执行侧已判非法（⑥ 契约）
+- 未实现地址的读出值为 0——但**该读永远不该被采用**：csr_fu 在执行侧已判非法
 
 ### ⑤ data structure（schema + 字段三角色）
 
-- **state**：`current_priv`；`csr_stage.valid`
-- **header**：`mstatus`（MIE / MPIE / MPP）、`mie`、`mip`、`mtvec`——被派生逻辑当谓词读；
-  `csr_stage.tag`(4)——apply 时与 `commit_tag[k]` 比对
-- **payload**：`mepc`、`mcause`、`mtval`、`mscratch`、`mcycle`、`minstret`、
-  `CSR[csr_addr]` 的读写值——只存与转发；`csr_stage.{addr, wdata}`；硬连组无存储
+架构寄存器分三组，**flush 一律不动**（无投机成分，无可回滚）；`csr_stage` 是唯一投机寄存器。
 
-### ⑥ 接口——按消费者分侧
+- **state**：`csr_stage.valid`(1) —— 见 ①，本模块唯一的生命周期位
 
-#### 执行侧（对端 csr_fu，库外）
+- **header**（被派生逻辑或判据当谓词读）
+    - `mstatus` 的 `MIE` / `MPIE` / `MPP`、`mie`、`mip`、`mtvec` —— 派生 `interrupt_pending`、
+      `interrupt_cause`、`trap_vector`
+    - `mstatus.FS`(2) —— FP 单元脏标记。`mstatus.SD` **不是存储位**，
+      是 `(FS == Dirty)` 的派生只读投影
+    - `current_priv` —— 特权检查入参，送 csr_fu。**它不是 CSR**：无 12-bit 地址、
+      软件读写不到（RISC-V 故意不提供"当前特权级"查询口），只随 trap / MRET 变化。
+      **当前实现恒 M**；U 态待补
+    - `csr_stage.tag`(4) —— apply 时与 `commit_tag[k]` 比对
 
-- 组合读(in)
-    - 地址；`csr_addr`(12) —— 软件读口选中哪个寄存器
-- 组合读(out)；`CSR[csr_addr]`(64) 旧值
-- 组合读(out)；`current_priv` —— 特权检查入参（M-only 下恒 M，检查退化为只读位判断）
+- **payload**（只存与转发，本模块不对其求谓词）
+    - trap 组：`mepc`、`mcause`、`mtval`、`mscratch`
+    - 计数器：`mcycle` / `minstret` —— 真 64 位，可软件写（软件写当拍覆盖自增）
+    - FP 组：`fflags`(5，地址 0x001)、`frm`(3，地址 0x002)。
+      `fcsr`(地址 0x003) **不是独立寄存器**，是 `{frm, fflags}` 的组合视图。
+      `fflags` 是粘性标志，FP 指令退休时按位或累加（见 ③）；`frm` 供 `dispatch_logic`
+      在派遣拍算 `effective_rm`（**不直供 FPU**，见 ⑥）
+    - `csr_stage.{csr_addr(12), csr_wdata(64)}`
+    - `CSR[csr_addr]` 的读写值
 
-**csr_fu 行为契约**（库外单元，集成层登记；FU_Group = 1，见 [[ISQ_Group0微架构文档.md]]）：
+- **硬连只读组，无存储**
+    - `mhartid` / `mvendorid` / `marchid` / `mimpid` —— 读 0（`mhartid = 0` 即 hart 0）
+    - `misa` —— **不是常量，是由静态配置打包出来的只读值**。MXL 恒为 2（RV64，bits[63:62]）；
+      扩展位由同一组 `ENABLE_*` 参数导出，与 decode、FE、LSU、FPU 同源：
 
-- 收 issue：`rs1_data`、uimm（`imm` 通道）、`csr_addr`（子码段）、子码、`self_tag`
-- 执行拍经本读口**组合读旧值**——串行化保证执行时全机只有它一条在飞，
-  旧值必为架构当前值，读无竞争
-- 算两样：`result_data` = 旧值（回 rd，上 completion lane 0）；
-  写意图 `csr_wdata` / `csr_write_enable`（CSRRW = rs1、CSRRS = old | rs1、CSRRC = old & ~rs1；
-  S/C 型在 rs1 = x0 / uimm = 0 时不置写使能）
-- 非法判据：未实现地址、或只读 CSR（`csr_addr[11:10] == 11`）且要写
-  → `exception_flag` / `cause` = Illegal Instruction，且 `we = 0`
-- 非流水：执行中或 P3 仲裁 hold 时 `FU_ready[1] = 0`
-- **flush 拍作废在飞工作**（FU flush 契约，[[p3_arbiter_G0微架构文档.md]] ④）
-- **绝不当场写任何 CSR**——写意图上 lane 0，由本模块 `csr_stage` 捕获、
-  提交拍 apply 才落笔；被 flush 则蒸发
+```text
+ENABLE_A  →  bit 0  (A)     ENABLE_C  →  bit 2  (C)
+ENABLE_FD →  bit 3  (D) 与 bit 5 (F)
+恒置      →  bit 8  (I)     bit 12 (M)
 
-#### 写回侧（直接监听 p3_arbiter_G0 的 lane 0）
+全部启用   misa = 64'h8000_0000_0000_112D    RV64IMAFDC
+仅 IMFD    misa = 64'h8000_0000_0000_1128    A、C 两位为 0
+```
 
-本接口是 G0 completion 的 CSR 专用旁带连接，不经过 [[CompletionScoreboard微架构文档.md]]，
-也不由该模块保存或转发。
+      **某个扩展的库外契约未闭合时，对应位必须为 0**——`misa` 报告的是构建配置**已经实现**
+      的 ISA，不是开关、也不是路线图。翻位的前置条件见 `../异常与trap语义.md` §6。
+      该值须与 lockstep 用的 ISS `--isa` 一致：全启用时为 `rv64imafdc_zicsr_zifencei`
 
-- capture（announce ×1，监听 writeback lane 0）
+### ⑥ 接口
+
+**in-event** `→ system_instruction_handler`
+
+- capture（announce ×1，监听 p3_arbiter_G0 的 lane 0）
     - move；`csr_addr`(12)、`csr_wdata`(64) —— 存入 `csr_stage`
     - broadcast；`is_csr`(1)、`csr_write_enable`(1) —— capture 判据，不留存
     - 触发；`Result_valid[0]`(1)
     - 地址；`tag_out[0]`(4) —— 存入 `csr_stage.tag`
-    - `Result_valid[0] ∧ is_csr ∧ csr_write_enable ∧ !global_flush_late` 时 capture：
-      `tag_out[0]` 标识这条 CSR 指令；`csr_addr` / `csr_wdata` 是其待退休写入地址和值。
+    - 收的是 lane 0 专有的 `csr_sideband` 层，加公共层 `completion_common` 里的
+      `Result_valid` 与 `tag_out` 两样作触发与身份。`csr_sideband` **不经过**
+      [[CompletionScoreboard微架构文档.md]]，也不由该模块保存或转发；其余 lane 不携带这组字段。
       `is_csr` 区分 G0 上的 CSR 与 ALU/BRU/DIV completion；`csr_write_enable` 区分
       只读 CSR 操作与实际写意图
-
-#### 退休侧（对端 CompletionSCB）
 
 - commit（announce，**2 lane**）
     - broadcast；`commit_valid[k]`(1，k∈{0,1})、`commit_tag[k]`(4，k∈{0,1}) ——
       与 `csr_stage.tag` 比对，不留存
+    - broadcast；`commit_fflags[k]`(5，k∈{0,1})、`rd_is_fp[k]`(1，k∈{0,1})、
+      `rd_write_enable[k]`(1，k∈{0,1}) ——
+      `fflags_accrue`：fflags 按位或、FS 脏判据（见 ③）。
+      `rd_write_enable` 用来限定"真的写了 FP 寄存器"，缺它会误置脏
     - broadcast；`commit_count`(2) —— `minstret` 自增量
 
-#### flush 侧（对端 flush_model）
-
 - `trap_state_write`（announce ×1）
-    - move；`epc`(64)、`cause`、`tval` —— 分别写进 `mepc` / `mcause` / `mtval`
+    - move；`epc`(64)、`cause`(63)、`tval`(64) —— 分别写进 `mepc` / `mcause` / `mtval`
       （`mret_update` 下本模块不采样这三个）
-    - 选通；`kind`(2) —— 选 `trap_entry` 还是 `mret_update`；本模块既不存它也不算它
+    - 选通；`kind`(3) —— 选 `trap_entry` 还是 `mret_update`；本模块既不存它也不算它。
+      `MISPREDICT` / `FENCE_I` 两种 kind 下对端的 `valid = 0`，整包不到达本模块
     - 触发；`valid`(1) —— 本拍要不要更新架构态
+
 - flush（announce）
     - 触发；`global_flush_late`(1) —— 单线脉冲，**只清 `csr_stage.valid`**，架构寄存器不动
+
 - 组合读(in)
-    - broadcast；`cause` —— `trap_vector` 读口的入参，在 `(cause << 2)` 里被算
+    - 地址；`csr_addr`(12) —— 软件读口选中哪个寄存器
+    - broadcast；`cause`(63) —— `trap_vector` 读口的入参，在 `(cause << 2)` 里被算
     - 选通；`is_interrupt`(1) —— `trap_vector` 的第二个入参，选 vectored 还是 direct
+    - broadcast；`mip` 的外部中断位 —— 顶层电平直驱，**无 fire**，不存进本模块的任何 event
+
+**out-event** `system_instruction_handler →`
+
+- 组合读(out)；`CSR[csr_addr]`(64) —— 软件读口旧值
+- 组合读(out)；`current_priv` —— 特权检查入参（M-only 下恒 M，检查退化为只读位判断）
+- 组合读(out)；`frm`(3) —— 供 `dispatch_logic` 在派遣拍算 `effective_rm` 与 `frm_illegal`。
+  **不再直供 FPU**：舍入模式在派遣拍定格后随 payload 走，FPU 不读实时值
+- 组合读(out)；`fs_enabled`(1) —— `= (mstatus.FS != Off)`。两个消费者：
+  `dispatch_logic` 判 `fp_illegal`、csr_fu 判 `fcsr`/`fflags`/`frm` 三个地址是否可访问
 - 组合读(out)；`trap_vector(cause, is_interrupt)`(64) —— 带外部参数，故不入 Static Info
-
-#### 顶层
-
-- broadcast；`mip` 的外部中断位 —— 电平直驱，**无 fire**，不存进本模块的任何 event
 
 **Static Info**
 

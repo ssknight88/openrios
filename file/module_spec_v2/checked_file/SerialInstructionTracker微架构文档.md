@@ -30,8 +30,9 @@
       新 set 又被 `serial_inflight_valid` 的拍初值挡住 ⇒ 无置位 / 清除竞争
 
 - **flush** = `global_flush_late` → `valid ← 0`
-    - 承担一切**不提交**路径的解除：非法 CSR 异常、队头被中断抢占
-      （待补的 ECALL / EBREAK 同走此口）
+    - 承担一切**不提交**路径的解除：非法 CSR 异常、队头被中断抢占、
+      原子指令或 FENCE 在飞期间的任意 flush
+    - `ECALL` / `EBREAK` **不走此口**——它们 `is_serial = 0`，从不置位本模块
     - MRET 提交后 flush：clear 与 flush 同拍都写 `valid ← 0`，次态一致
 ### ④ data path
 

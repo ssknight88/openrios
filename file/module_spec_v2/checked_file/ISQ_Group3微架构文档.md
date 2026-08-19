@@ -1,7 +1,19 @@
 # ISQ_Group3 · LSU 组 · 单 entry
 
 组内只有 LSU 一个 FU，`FU_Group` 恒为 0。
-**唯一带访存字段**的一组（`is_store` / `store_size`）。
+**唯一带访存字段**的一组（`is_store` / `mem_funct3`），
+也是唯一需要 `rd_is_fp` 的一组——FP load 与整数 load 的尺寸相同、只差结果整形。
+
+本组承接三类指令，**schema 完全相同、无任何专用字段**，由 `exe_subop` 唯一区分：
+
+```text
+LSU      普通 load / store
+ATOMIC   LR / SC / 9 种 AMO，各 .W/.D，共 22 条
+FENCE    FENCE / FENCE.I
+```
+
+后两类到达本模块时 `is_serial = 1`（在 dispatch 侧生效，本模块不查），
+所以它们进入本组时**退休窗口是空的**——本组同时至多一条在飞的事实不变。
 
 ### ① per-entry state
 
@@ -42,9 +54,9 @@ LSU 的一切内部反压（地址队列 / store buffer 余量 / 执行段占用
 都必须折进这一位，本模块不另设第二条反压通路
 ```
 
-> **待补**：`g3_lsu_iface` 尚无文档。上面这条契约是按"反压全折进 `FU_ready`"写的模板，
-> 若 LSU 另有独立的 issue 侧约束（如 store buffer 满须单独挡 store），
-> 本节 `issue` 的判据要相应增项。
+> `g3_lsu_iface` 的完整双向边集见 `../../FU契约.md` §5.5。上面这条是按
+> "反压全折进 `FU_ready`"写的；若 LSU 另有独立的 issue 侧约束（如 store buffer 满
+> 须单独挡 store），本节 `issue` 的判据要相应增项。
 
 **采样约定**：对外的空闲投影
 
@@ -79,17 +91,58 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - **payload**
     - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（访存偏移）
-    - `is_store + store_size`：`dispatch` 写入，本模块不查
+    - `is_store`：`dispatch` 写入，本模块不查。**它专指"走 SCB drain 子流程的普通缓冲
+      store"**，不是"这条指令会不会写内存"。原子指令会写内存但 `is_store = 0`——
+      它们不走 `store_drain_req` / `store_done`，`exec_done` 直接意味着不可回滚的
+      原子事务已完成，按普通完成项按序提交。`FENCE` / `FENCE.I` 同样 `is_store = 0`
+    - `mem_funct3`(3)：`dispatch` 写入，本模块不查。**访存类型**——
+      同时承载宽度、符号扩展与 FP 三件事，load 与 store 共用一个字段。
+      load 侧有七种取值（字节 / 半字 / 字 / 双字，前三种再分有无符号扩展），
+      **2 bit 装不下**，故为 3 bit；store 侧只用其中的宽度部分。
+      结果的符号扩展与 NaN-boxing 由 LSU 在驱动 `result_data` 之前完成，
+      后端不再需要额外的扩展字段
+    - `rd_is_fp`：`dispatch` 写入，本模块不查。供 LSU 区分同宽度的整数与 FP load
+      （字宽的 `LW` 与 FP load 取值相同、双字同理），二者只差结果整形
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入，**位宽与编码待定**
+    - `exe_subop`(24)：`dispatch` 写入并原样发射；编码见集成层唯一 schema。
+    - `full_decode`(17)：`{csr_write_intent, illegal, rm[2:0], csr_addr[11:0]}`；
+      本组一位也不消费，对非适用字段置零并忽略。
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 
 ```text
 rs3_ready / rs3_wait_tag / rs3_data   本组无三源指令
 FU_Group                              组内单成员，恒 0，无须存
-pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
+pc / inst_bits / is_compressed / pred_taken / pred_target_pc
+                                      指令身份与分支预测字段，只有 BRU 用
 ```
+
+**三类指令对同一组字段的用法**
+
+```text
+LSU      rs1 = 基址   rs2 = store 数据   imm = 偏移      mem_funct3 = 宽度+符号+FP
+ATOMIC   rs1 = 地址   rs2 = 操作数/写数据  imm 恒 0        mem_funct3 只用宽度(.W/.D)
+                      LR 不用 rs2（use_rs2 = 0 ⇒ rs2_ready 由上游给 1）
+FENCE    rs1/rs2 均不用；imm、mem_funct3 均无意义，置零忽略
+```
+
+**`aq` / `rl` 的架构决策**：本实现**一律按 `aq = rl = 1` 执行**（全 acquire + release），
+编码里的这两位**不译码、不进 payload**。这是比 ISA 要求更强的内存序，合法；
+代价是放弃了 relaxed 原子的性能。之所以能这样，是因为原子指令已 `is_serial = 1`、
+在退休点串行化，天然全序，逐指令放松也拿不到好处。
+`full_decode` 因此不为 aq/rl 加位。**这是决策不是遗漏**——不得在别处描述成"已消费 aq/rl"。
+
+**地址对齐**：LR / SC / AMO 的地址**必须自然对齐**（`.W` 4 字节、`.D` 8 字节），
+否则报异常且**不得产生任何访存副作用**。cause 分两种：
+`LR` 是读操作报 **4**（load address misaligned），`SC` / `AMO` 报 **6**（store/AMO
+address misaligned），`tval` = 出错地址。号段全表见 `../../异常与trap语义.md`。
+
+**`rd = x0`**：只抑制 ARF 写口（由 `rd_write_enable` 承担），**不抑制访存副作用**。
+`amoadd.d x0, x3, (a0)` 仍要改内存。本组不参与这件事，记在此处只为防止误读。
+
+> LSU 侧的行为契约——`exec_done` 的严格时点、reservation 的建立与作废、
+> FENCE 的排空范围、以及 `g3_lsu_iface` 的完整双向边集——**不在本模块**，
+> 见 `../../FU契约.md` §5。
 
 ### ⑥ 接口
 
@@ -112,7 +165,8 @@ pc / pred_taken / pred_target_pc      分支预测字段，只有 BRU 用
 **out-event** `ISQ_Group3 →`
 
 - issue；`rs1_data`(64)、`rs2_data`(64)、`imm_valid`(1)、`imm_data`(64)、
-  `is_store`(1)、`store_size`(2)、`self_tag`(4)、子码
+  `is_store`(1)、`mem_funct3`(3)、`rd_is_fp`(1)、`self_tag`(4)、
+  `exe_subop`(24)、`full_decode`(17)
 
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 LSU，交付语义与 ready 归集成层登记。

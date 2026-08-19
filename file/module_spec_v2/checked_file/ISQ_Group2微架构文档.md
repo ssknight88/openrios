@@ -2,6 +2,9 @@
 
 组内只有 FPU 一个 FU，`FU_Group` 恒为 0。
 **唯一使用 `rs3` 的一组**——FMA 类指令需要三个源。
+**也是唯一消费 Full Decode 中 `rm` 的一组**（且拿到的是派遣侧定格的 `effective_rm`）——
+舍入模式只有 FP 运算用得到；
+FP `.S/.D` 精度由 `exe_subop` 的固定高位区分。
 
 ### ① per-entry state
 
@@ -67,15 +70,22 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 - **payload**
     - `rs1_data` / `rs2_data` / `rs3_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `self_tag`：`dispatch` 写入，本模块不查
-    - **子码 / Full Decode 控制信号**：`dispatch` 写入，**位宽与编码待定**
+    - `exe_subop`(24)：`dispatch` 写入并原样发射；其固定高位区分 FP `.S/.D`。
+    - `full_decode`(17)：`{csr_write_intent, illegal, rm[2:0], csr_addr[11:0]}`；FPU 消费
+      `rm[2:0]`，并忽略 `illegal/csr_addr`。
+      **本组捕获的 `rm` 已是 `effective_rm`**——装配侧用派遣拍算好的
+      `effective_rm = (rm == DYN) ? frm : rm` 覆写了这三位，**保留值不会到达本组**
+      （派遣侧已判非法并改道 G0）。因此 FPU **直接用它，不再读实时 `frm`**：
+      本 entry 可能驻留多拍，而快照把舍入模式钉死在派遣拍。
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
 
 ```text
 FU_Group                          组内单成员，恒 0，无须存
-pc / pred_taken / pred_target_pc  分支预测字段，只有 BRU 用
-is_store / store_size             访存字段，只有 LSU 用
-imm_valid / imm_data              FP 运算指令无立即数；FLD/FSD 属 LSU 组
+pc / inst_bits / is_compressed / pred_taken / pred_target_pc
+                                  指令身份与分支预测字段，只有 BRU 用
+is_store / mem_funct3 / rd_is_fp  访存字段，只有 LSU 用
+imm_valid / imm_data              FP 运算指令无立即数；FP load/store 属 LSU 组
 ```
 
 ### ⑥ 接口
@@ -98,7 +108,8 @@ imm_valid / imm_data              FP 运算指令无立即数；FLD/FSD 属 LSU 
 
 **out-event** `ISQ_Group2 →`
 
-- issue；`rs1_data`(64)、`rs2_data`(64)、`rs3_data`(64)、`self_tag`(4)、子码
+- issue；`rs1_data`(64)、`rs2_data`(64)、`rs3_data`(64)、`self_tag`(4)、
+  `exe_subop`(24)、`full_decode`(17)
 
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 FPU，交付语义与 ready 归集成层登记。
