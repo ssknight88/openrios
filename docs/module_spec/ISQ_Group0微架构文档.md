@@ -10,7 +10,7 @@ FU_Group = 2   DIV
 
 **唯一需要分支预测字段**的一组（BRU 要拿 `pc` / `pred_*` 判是否 mispredict）。
 
-### ① per-entry state
+## ① per-entry state
 
 `FREE / RESIDENT`
 
@@ -24,22 +24,22 @@ FU_Group = 2   DIV
 - RESIDENT → FREE：issue（本拍无 dispatch 时）
 - RESIDENT → FREE：flush
 
-### ③ condition 细化
+## ③ condition 细化
 
 - **dispatch** = `wr_en`
-    - `payload_in` 在 `wr_en = 1` 时捕获
+  - `payload_in` 在 `wr_en = 1` 时捕获
 - **issue** = `issue_valid` ∧ `FU_ready[FU_Group]` ∧ `!global_flush_late`
-    - `issue_valid` = `isq_valid` ∧ `operand_ready`
+  - `issue_valid` = `isq_valid` ∧ `operand_ready`
     - `operand_ready` = `(rs1_ready ∨ fast_ready_rs1) ∧ (rs2_ready ∨ fast_ready_rs2)`
       —— **本组不用 `rs3`**，不参与取与
     - `fast_ready_rsX` = `!rsX_ready` ∧ OR over b∈{0..3} (`bypass_valid[b]` ∧ `rsX_wait_tag == bypass_tag[b]`)
-        - **四条 bypass lane 全监听**——bypass 是全局广播
+      - **四条 bypass lane 全监听**——bypass 是全局广播
     - `FU_ready[FU_Group]` 是按组内索引取用
 - **bypass_capture** = `isq_valid` ∧ `!global_flush_late` ∧ `!issue`
   ∧ (`fast_ready_rs1` ∨ `fast_ready_rs2`)
-    - 同拍 issue 时不捕获，只向 FU 前递
+  - 同拍 issue 时不捕获，只向 FU 前递
 - **flush** = `global_flush_late`
-    - 优先级最高：flush 拍不 dispatch、不 issue、不 capture，`isq_valid ← 0`
+  - 优先级最高：flush 拍不 dispatch、不 issue、不 capture，`isq_valid ← 0`
 
 **`FU_ready` 契约**
 
@@ -57,9 +57,10 @@ FU（CSR / DIV）在执行中保持 FU_ready = 0；
 ```text
 isq_free_for_dispatch = !isq_valid ∨ issue        // 含同拍 issue
 ```
-### ④ data path
 
-#### 1. `entry` 的捕获与发射
+## ④ data path
+
+### 1. `entry` 的捕获与发射
 
 ```text
 dispatch 输入端口 → entry           本组 schema 的全部字段（见 ⑤）
@@ -79,29 +80,22 @@ bypass 输入端口   → issue 输出端口   bypass_data[b] —— 仅 !rsX_re
 
 - **state**：`isq_valid`
 - **header**
-    - `rs1_ready` / `rs2_ready`：`dispatch` 写初值；`bypass_capture` 命中对应源时置 1
+  - `rs1_ready` / `rs2_ready`：`dispatch` 写初值；`bypass_capture` 命中对应源时置 1
     - `rs1_wait_tag` / `rs2_wait_tag`：`dispatch` 写入，`bypass_capture` 不改
     - `FU_Group`：`dispatch` 写入。取值 `{0,1,2}`，用于选组内 FU 并原样送给 FU 自译
 - **payload**
-    - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
+  - `rs1_data` / `rs2_data`：`dispatch` 写初值，`bypass_capture` 命中时更新
     - `imm_valid + imm_data`：`dispatch` 写入（ALU 立即数型、CSR 的 `uimm` 型）
     - `pc + pred_taken + pred_target_pc`：`dispatch` 写入，BRU 判 mispredict 用
-    - `is_compressed`：`dispatch` 写入，本模块不查。BRU 按它算链接地址与
-      分支 fall-through 目标（压缩取 `pc + 2`、否则 `pc + 4`）
-    - `inst_bits`(32)：`dispatch` 写入，本模块不查。本条指令的原始编码，
-      与 `pc` 同属"指令身份"。唯一消费者是本组的 ILLEGAL 子码——非法指令的
-      `tval` 要写出错指令的编码，压缩指令只取低 16 位（由 `is_compressed` 指明）
     - `self_tag`：`dispatch` 写入，本模块不查
-    - `exe_subop`(24)：`dispatch` 写入并原样发射；编码见集成层唯一 schema。
-    - `full_decode`(17)：`{csr_write_intent, illegal, rm[2:0], csr_addr[11:0]}`；
-      本组 CSR 消费 `csr_addr` 与 `csr_write_intent`，ILLEGAL 消费 `illegal`，其余忽略。
-      **`csr_write_intent` 只有本组用**——它是 `CSRRS`/`CSRRC` 在 `rs1_idx == x0` 时
-      "读而不写"的唯一判据，后端推导不出来（payload 只带 `rs1_data`，不带 `rs1_idx`）
+    - **子码 / Full Decode 控制信号**：`dispatch` 写入,
+      **位宽与编码待定**
 
 **本组不存的字段**（`payload_in` 上有，本组丢弃）：
+
 ```text
 rs3_ready / rs3_wait_tag / rs3_data   本组无三源指令
-is_store / mem_funct3 / rd_is_fp      访存字段，只有 LSU 用
+is_store / store_size                 访存字段，只有 LSU 用
 ```
 
 ### ⑥ 接口
@@ -109,28 +103,27 @@ is_store / mem_funct3 / rd_is_fp      访存字段，只有 LSU 用
 **in-event** `→ ISQ_Group0`
 
 - dispatch（Transaction，单向选通；ready = `isq_free_for_dispatch`，已被上游吸收；**1 写口**）
-    - move；⑤ 列出的全部字段 —— 从 `payload_in` 捕获进 entry
+  - move；⑤ 列出的全部字段 —— 从 `payload_in` 捕获进 entry
     - 触发；`wr_en`(1) —— 本拍要不要捕获 `payload_in`
 
 - bypass_capture（announce，**4 lane**）
-    - move；`bypass_data[b]`(64，b∈{0..3}) —— 命中源的 `rsX_data` 写进 entry
+  - move；`bypass_data[b]`(64，b∈{0..3}) —— 命中源的 `rsX_data` 写进 entry
     - broadcast；`bypass_valid[b]`(1，b∈{0..3})、`bypass_tag[b]`(4，b∈{0..3}) —— 与 `rsX_wait_tag` 比对，不留存
 
 - flush（announce）
-    - 触发；`global_flush_late`(1) —— 单线脉冲，`isq_valid ← 0`，无载荷
+  - 触发；`global_flush_late`(1) —— 单线脉冲，`isq_valid ← 0`，无载荷
 
 - 组合读(in)
-    - broadcast；`FU_ready[FU_Group]`(1，FU_Group∈{0,1,2}) —— 进 `issue` 判据，不留存
+  - broadcast；`FU_ready[FU_Group]`(1，FU_Group∈{0,1,2}) —— 进 `issue` 判据，不留存
 
 **out-event** `ISQ_Group0 →`
 
 - issue；`rs1_data`(64)、`rs2_data`(64)、`FU_Group`(2)、`imm_valid`(1)、`imm_data`(64)、
-  `pc`(64)、`inst_bits`(32)、`is_compressed`(1)、`pred_taken`(1)、`pred_target_pc`(64)、
-  `self_tag`(4)、`exe_subop`(24)、`full_decode`(17)
+  `pc`(64)、`pred_taken`(1)、`pred_target_pc`(64)、`self_tag`(4)、子码
 
 `issue` 的判据（含 `FU_ready` 与 `!global_flush_late`）在 ③；
 它送往库外的 FU，交付语义与 ready 归集成层登记。
 
-**Static Info**
+**Static Info：**
 
 - `isq_free_for_dispatch`(1) —— `isq_valid` 与本拍 `issue` 的投影，**含同拍 `issue`**（见 ③）

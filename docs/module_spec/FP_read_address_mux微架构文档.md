@@ -3,28 +3,27 @@
 两个候选 slot 共有 6 个可能的 FP 源地址（`slot0/1.rs1/2/3_idx`），而 FP 侧只有 3 个读口。
 本模块做这个收缩，其输出**同时驱动 FP_ARF 与 FP_tag_mapping 的读地址口**。
 
-### ① per-entry state
-
-**无。** 
-
-### ② state transition & condition（event 名）
+## ① per-entry state
 
 **无。**
 
-### ③ condition 细化
+## ② state transition & condition（event 名）
 
 **无。**
 
-### ④ data path
+## ③ condition 细化
 
-#### 1. `fp_read_idx[1:3]`(output)
+**无。**
+
+## ④ data path
+
+### 1. `fp_read_idx[1:3]`(output)
 
 ```text
 fp_read_idx[k] = is_fp_instruction[0] ? slot0.rs{k}_idx : slot1.rs{k}_idx     k ∈ {1,2,3}
 ```
 
 - 选通位**只有 `is_fp_instruction[0]` 一个**，slot1 的那一位不参与
-
 
 **有效消费者唯一** ——3 个读口服务 2 个 slot 的自洽性依据：
 
@@ -49,13 +48,13 @@ fp_read_idx[k] = is_fp_instruction[0] ? slot0.rs{k}_idx : slot1.rs{k}_idx     k 
 **in-event** `→ FP_read_address_mux`
 
 - 组合读(in)
-    - broadcast；`slot0/1.rs1/2/3_idx`(5×6) —— 6 个候选地址，本模块从中收缩出 3 个
+  - broadcast；`slot0/1.rs1/2/3_idx`(5×6) —— 6 个候选地址，本模块从中收缩出 3 个
     - 选通；`is_fp_instruction[0]`(1) —— 二选一，决定把 slot0 还是 slot1 的 rs 索引送出
 
 **out-event** `FP_read_address_mux →`
 
 - 组合读(out)；`fp_read_idx[1:3]`(5×3，读地址)
 
-**Static Info**
+**Static Info：**
 
 无。
