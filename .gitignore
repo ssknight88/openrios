@@ -1,1 +1,5 @@
 /.$OR_BE_control.drawio.bkp
+
+# interface_spec 只保留 BE_FE 接口规范 PDF，其余文件仅本地保留
+docs/interface_spec/*
+!docs/interface_spec/BE_FE接口规范.pdf
