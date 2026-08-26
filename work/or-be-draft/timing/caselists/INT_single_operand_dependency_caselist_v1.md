@@ -3,14 +3,13 @@
 Source K-map:
 
 ```text
-OR_BE_Model/Timing Diagram/KMap/INT_dependency/INT_single_operand_dependency_KMap_v2.drawio
+../k-maps/INT_single_operand_dependency_KMap_v2.drawio
 ```
 
 Normative timing sources:
 
 ```text
-golden/DEFINITIVE_SPEC_2.md
-Performance Evaluation/orbe_l2miss_results.md
+pending promotion to spec/or-be/
 ```
 
 Naming rule:

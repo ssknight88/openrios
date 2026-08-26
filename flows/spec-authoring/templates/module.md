@@ -2,7 +2,7 @@
 
 ## 总原则
 
-- 谁写的判据只有一条：可不可推导。推得出来交 AI，推不出来人写。
+- 谁写的判据只有一条：**可不可推导**。推得出来交 AI，推不出来人写。
 - 零 state 的 module：`State` / `State Transition & Condition Name` / `Detailed Condition Description` 三节可全空，合法。
 - Event 在【定义点】处唯一定义，其他位置只引用。
 
@@ -59,35 +59,22 @@ Condition: detailed statement
 ### Out-event
 
 - 详细描述【定义点】`Out-event` 产生的细节逻辑。
-- 模板：
-
-```text
-Out-event: detailed statement
-```
 
 ### Out Static Info
 
 - 详细描述【定义点】`Out Static Info` 产生的细节逻辑。
-- 模板：
-
-```text
-Out Static Info: detailed statement
-```
 
 ## Data structure
 
-> 详情见：微架构文档规范 > 数据结构（per-entry data）。
+描述真实存储的 `Data Structure`，并在此说明更新时机。
 
-- 描述真实存储的 `Data Structure`。
-- `Data Structure` 的更新时机描述在此。（待补充）
-
-### Structure State
+### State
 
 - 描述真实存储的 `Per-entry State` 和 `Structure State`。
 
 ### Header
 
-- 描述真实存储的、内部需要的、用于产生 condition 的信号。
+- 描述真实存储的、内部用于产生 condition 的信号。
 - `Header` 区别于 `State` 和 `Payload`。
 
 ### Payload
@@ -96,8 +83,7 @@ Out Static Info: detailed statement
 
 ## Data Path
 
-- 定义带有 payload 的 event 的连接。
-- 模板：
+定义带有 payload 的 event 的连接：
 
 ```text
 In-event Name -> Out-event Name
@@ -108,9 +94,9 @@ Data Structure -> Data Structure
 
 ## Interface
 
-> 由 AI 推导可得。
+由前述定义推导并归档：
 
 - In-event
 - Out-event
 - In/Out Static Info
-- 接口时序（待思考）
+- 接口时序

@@ -3,14 +3,14 @@
 Source K-maps:
 
 ```text
-OR_BE_Model/Timing Diagram/KMap/INT_dependency/INT_P1MUX_two_operands_dependency_KMap_v2.drawio
-OR_BE_Model/Timing Diagram/KMap/INT_dependency/INT_P2MUX_two_operands_dependency_KMap_v2.drawio
+../k-maps/INT_P1MUX_two_operands_dependency_KMap_v2.drawio
+../k-maps/INT_P2MUX_two_operands_dependency_KMap_v2.drawio
 ```
 
 Normative timing source:
 
 ```text
-OR_BE_Model/BE Spec/DEFINITIVE_SPEC/DEFINITIVE_SPEC_3.md
+pending promotion to spec/or-be/
 ```
 
 This caselist covers the source-ready composition of one dependent instruction with two operands. The P1 MUX cases cover operands captured while constructing a new ISQ payload. The P2 MUX cases cover an already-resident ISQ entry receiving current-cycle forwarding at FU-input time. It does not enumerate producer opcode latency variants inside the same POI; those are covered by `INT_single_operand_dependency_caselist.md`.

@@ -1,6 +1,6 @@
 # INT Two-Operands Ready-Source Dependency Timing Diagrams
 
-Source caselist: `Caselist/INT/INT_two_operands_dependency_caselist.md`
+Source caselist: `../caselists/INT_two_operands_dependency_caselist.md`
 
 Generated under L5 reader-facing rules. P1 cases above show new ISQ payload construction; P2 cases below show resident-entry FU-input MUX forwarding. P1 source-resolution is normalized to T6 in the legacy figures, while P2 resident-entry source-ready is normalized to T8 in the appended figures.
 

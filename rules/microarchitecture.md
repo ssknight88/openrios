@@ -28,7 +28,7 @@
 **Static Info**：无 fire，纯信息传递，不是 event（occupancy、be_idle）
 
 **event 实现定义**（此处只给格式；每条 event 的定义落在**产出它的 module 的输出规范**，全文档仅一处，其余各节只引用 event 名称）：
-- **Fire来源**：本 event 何时 fire。**fire 即一次握手**。写法见[[微架构文档规范#Fire来源 拆解规范]]
+- **Fire来源**：本 event 何时 fire。**fire 即一次握手**。写法见本节的 [Fire来源拆解规范](#fire来源-拆解规范)。
 - **触发来源**：（仅概念，不作为字段要求）
 	- **state-driven**：由 FSM 的 state / 转移决定（Mealy 挂转移，Moore 挂状态）
 	- **comb-driven**：由组合谓词决定，读一条或多条 in-event / static info 当拍算出
@@ -164,70 +164,7 @@
 
 **对偶律**：CAM 与 FIFO 互为镜像——per-entry↔指针、聚合↔解码互换。序约束越强，状态越从 per-entry 向指针集中；偏序结构（age matrix）= 混合表示。
 
-## Module文档骨架
+## 配套资产
 
-> 谁写的判据只有一条：**可不可推导**。推得出来交 AI，推不出来人写。
-> 零 state 的 module：State / State Transition / Detailed Condition 三节可全空，合法。
-> Event在【定义点】处唯一定义，其他位置引用
-
-### Submodule
-> 放入文档链接即可
-
-### FSM
-> 保证State Transition全覆盖
-> Condition Name手写
-#### State
-
-##### Per-entry State
-> 必须存在
-- Per-entry State: detailed statement
-##### Structure State Mapping
-> Structure State如何Mapping回Per-entry State
-- Per-entry State: Structure State statement
-#### State Transition & Condition Name
-> 完备描述存在的Per-entry State转换，condition name仅标注
-> 若Current -> Next有重复则另起一行
-- Current Per-entry State -> Next Per-entry State: Condition Name
-#### Detailed Condition Description
-> 【定义点】本 module **内部 condition** 的 event 定义
-- 逐条按 [[微架构文档规范#event 实现定义]] 的格式写，Fire来源 按 [[微架构文档规范#Fire来源 拆解规范]] 拆
-- in-event 不在此定义（定义在产出它的 module）；out-event 不在此定义（定义在本文档 Output）
-- 内部 condition 不跨 module，无握手，Fire来源 无 ready 侧
-
-### Output
-#### Out-event
-> 【定义点】本 module 产出的 out-event 定义
-- 逐条按 [[微架构文档规范#event 实现定义]] 写全：Fire来源 · payload 来源 · payload 定义
-- **握手在此定义**：Transaction 型的 Fire来源 须含 ready 侧来源；Notify 型无 ready
-#### Out Static Info
-> 详细描述【定义点】Out Static Info产生的细节逻辑
-- Out Static Info: Detailed statement
-
-### Data structure
-> 详情见[[微架构文档规范#数据结构(per-entry data)]]
-> 描述真实存储的Data Structure
-> Data structure的更新时机描述在此（待补充）
-#### State
-> 描述真实存储的Per-entry State和Structure state
-#### Header
-> 描述真实存储的内部需要的用于产生condition的信号，区别于State和Payload
-#### Payload
-> 真实存储的payload信息
-### Data Path
-> 定义带有payload的event的连接
-- In-event Name -> Out-event Name
-- In-event Name -> Data Structure
-- Data Structure -> Out-event Name
-- Data Structure -> Data Structure
-
-### Interface
-> 由AI推导可得
-- In-event
-- Out-event
-- In/Out Static Info
-- 接口时序(待思考)
-## Flow Example
-
-### 逻辑层 Example
-
-[[Flow Example]]
+- Module 文档骨架：[`flows/spec-authoring/templates/module.md`](../flows/spec-authoring/templates/module.md)
+- 控制逻辑流程示例：[`flows/spec-authoring/examples/cam-fifo.md`](../flows/spec-authoring/examples/cam-fifo.md)

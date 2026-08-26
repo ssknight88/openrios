@@ -1,8 +1,8 @@
 # INT Single-Operand Dependency Timing Diagrams
 
-Source caselist: `Caselist/INT/INT_single_operand_dependency_caselist_v1.md`
+Source caselist: `../caselists/INT_single_operand_dependency_caselist_v1.md`
 
-Normative timing source: `golden/DEFINITIVE_SPEC_2.md`
+Normative timing source: pending promotion to `spec/or-be/`.
 
 This diagram set is the reduced INT single-operand v2 set: one representative INT consumer per producer latency family. LOAD/STORE dependent cases moved to MEM/LSU operand K-maps; non-MEM INT dependent classes are covered by the representative `*_to_ALU` rows.
 
@@ -525,4 +525,3 @@ Scope note: these figures show the nominal no-older-blocker path. Condition A ex
 - **T2 (Producer dispatch):** producer enters its group-local ISQ; normal boundaries are P3 at T6, P4 at T7, and ARF-ready at T8.
 - **T8 (ARF read):** the producer mapping is no longer busy, so the dependent reads architectural data from ARF at P1.
 - **T9 (Issue):** the dependent issues one cycle after ready payload construction.
-

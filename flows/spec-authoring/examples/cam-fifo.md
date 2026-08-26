@@ -1,6 +1,6 @@
 # CAM 与 FIFO：控制逻辑双例
 
-> [[微架构文档规范]] 的试穿场，核心是 control logic。素材来自 private_be_arch 的 D1_Stage.md / D1_IssueLogic.md。
+> [微架构文档规范](../../../rules/microarchitecture.md) 的试穿场，核心是 control logic。素材来自 private_be_arch 的 D1_Stage.md / D1_IssueLogic.md。
 
 ## 描述流程（六步）
 
@@ -15,7 +15,7 @@
 
 ## 【重写】Reservation Station（CAM 型）
 
-> 按 [[微架构文档规范#Module文档骨架]] 重排。素材同下方「例一」，未新增设计结论。
+> 按 [Module 文档骨架](../templates/module.md) 重排。素材同下方「例一」，未新增设计结论。
 > `⟨待填⟩` = 骨架要求、原素材没有的信息；`⟨需确认⟩` = 原素材有歧义、需你裁决。
 
 ### Submodule
@@ -345,4 +345,3 @@ per-entry FSM 对多写入免疫——per-entry 分解把 W slot 并发投影为
 
 - 跨 entry 裁决器成对出现：写口分配器（级联 find-first-free）↔ 读口选择器（age matrix select）；FIFO 两端全退化为指针算术（连续区间 ↔ at-head）
 - **序约束越强，分配/选择逻辑越向指针算术坍缩**——"状态向指针集中"的逻辑侧姊妹条
-
