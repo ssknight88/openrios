@@ -3,3 +3,5 @@
 docs/interface_spec/*
 !docs/interface_spec/BE_LSU接口规范.pdf
 archive/
+.codex/
+.claude/
