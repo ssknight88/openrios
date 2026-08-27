@@ -42,12 +42,30 @@ After build, the checkout is expected to provide:
 <isa_model>/isa_case/
 ```
 
+## Toolchain
+
+Use Verilator 5.050:
+
+```sh
+verilator --version
+```
+
+Expected version:
+
+```text
+Verilator 5.050 2026-07-01
+```
+
+The local verified build prints `rev v5.050`. Some packaged builds may print
+`rev VUNKNOWN-built20260701`; both are acceptable if the version and date are
+`5.050 2026-07-01`.
+
 ## Run
 
 Build the Verilator simulation:
 
 ```sh
-ISA_MODEL_INSTALL=/abs/path/to/isa_model BUILD_ONLY=1 ./run_verilator.sh
+ISA_MODEL_INSTALL=/abs/path/to/isa_model BUILD_ONLY=1 bash run_verilator.sh
 ```
 
 Run one ISA case:
@@ -55,14 +73,17 @@ Run one ISA case:
 ```sh
 ISA_MODEL_INSTALL=/abs/path/to/isa_model \
 ISA_ELF=/abs/path/to/isa_model/isa_case/rv64ui/rv64ui-p-add.riscv \
-./run_verilator.sh
+bash run_verilator.sh
 ```
 
 Run the 216-case batch:
 
 ```sh
-ISA_MODEL_INSTALL=/abs/path/to/isa_model ./run_verilator.sh --all
+ISA_MODEL_INSTALL=/abs/path/to/isa_model bash run_verilator.sh --all
 ```
+
+Batch mode prints only the start line and final summary by default. To print
+each case as it finishes, add `BATCH_PROGRESS=1`.
 
 ## Scope
 
