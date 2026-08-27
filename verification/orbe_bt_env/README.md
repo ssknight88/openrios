@@ -14,7 +14,7 @@ or ISA case binaries. Those files are taken from a separate ISA model checkout.
 Use the compatible ISA model branch:
 
 ```sh
-git clone <isa_model_repo_url> isa_model
+git clone /workspace/luke/git_local/isa_model.git isa_model
 cd isa_model
 git checkout feature/general-dev
 git checkout 6c408b82b969
