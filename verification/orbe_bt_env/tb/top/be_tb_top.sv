@@ -19,7 +19,6 @@ module be_tb_top;
   or_be_lsu_if lsu_vif(clk);
   ob_if ob_vif(clk);
   getter_if getter_vif(clk);
-
   assign lsu_vif.rst_n = rstn;
 
   mock_rtl u_mock_rtl (
