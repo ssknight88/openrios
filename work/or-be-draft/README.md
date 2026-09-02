@@ -11,3 +11,4 @@
 - `interfaces/`：接口规格材料。
 - `modules/`：模块级微架构文档。
 - `timing/`：时序图、caselist 和 K-map 分析材料。
+- `rtl/`: RTL代码。
