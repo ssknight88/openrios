@@ -27,7 +27,9 @@ package or_be_lsu_protocol_pkg;
     localparam int LSU_DATA_W      = 64;
     localparam int LSU_EXE_SUBOP_W = 24;
     localparam int LSU_MEM_F3_W    = 3;
-    localparam int LSU_CAUSE_W     = 5;
+    // 架构 mcause 宽度（RV64 去掉 interrupt 位）。边界上直接按架构宽度
+    // 传送，BE 侧不再做零扩展适配。
+    localparam int LSU_CAUSE_W     = 63;
 
     typedef logic [LSU_TAG_W-1:0]       lsu_tag_t;
     typedef logic [LSU_DATA_W-1:0]      lsu_data_t;
@@ -46,35 +48,41 @@ package or_be_lsu_protocol_pkg;
         logic is_fence_i;
     } lsu_req_property_t;
 
+    // BE 送入 LSU 的访存请求（schema_v3.md §1 `be_lsu_issue_pld_t`，226 bit）。
+    // 地址生成与请求分类都在 LSU 内部完成，本 payload 只承载原料字段：BE 不
+    // 计算 vaddr，也不计算 req_property——后者由 LSU 自己对 exe_subop 调用
+    // req_property_from_subop() 得到。
     typedef struct packed {
-        lsu_tag_t       self_tag;
-        lsu_req_property_t req_property;
-        lsu_exe_subop_t exe_subop;
-        logic [LSU_MEM_F3_W-1:0] mem_funct3;
-        logic           rd_is_fp;
+        lsu_tag_t       tag;
         logic [LSU_DATA_W-1:0] rs1_data;
-        logic [LSU_DATA_W-1:0] rs2_data;
         logic           imm_valid;
         logic signed [LSU_DATA_W-1:0] imm_data;
-        // Compatibility bit for the existing CompletionScoreboard.  It means
-        // ordinary store only; AMO/SC are store-side but not SCB drain stores.
-        logic           is_store;
-        // Initial store-dependency resolution snapshot supplied by the BE.
-        // For a plain store this is one equivalent authorization source;
-        // a later untagged wakeup is only needed when this is zero.
+        logic [LSU_DATA_W-1:0] store_data;
+        logic [LSU_MEM_F3_W-1:0] mem_funct3;
+        logic           rd_is_fp;
+        lsu_exe_subop_t exe_subop;
+        // CompletionScoreboard.st_br_resolve 的同拍快照，原样送入；是否与本次
+        // 请求相关由 LSU 判断（只有 store 侧请求才看它）。
         logic           st_br_resolve;
     } be_lsu_issue_pld_t;
 
+    // LSU 一次访存的终态回送（schema_v3.md §2，197 bit）。一次访存只回一次；
+    // done_valid 与 exception_valid 互斥，tag 两种情况下都有效。
+    typedef struct packed {
+        lsu_tag_t   tag;
+        logic       done_valid;
+        lsu_data_t  data;
+        logic       exception_valid;
+        lsu_cause_t exception_cause;
+        lsu_data_t  exception_tval;
+    } lsu_be_writeback_pld_t;
+
+    // read-side data 的独立复制线（schema_v3.md §3，68 bit）。必须与 writeback
+    // 的 done_valid 同拍；异常时恒为 0。
     typedef struct packed {
         lsu_tag_t  tag;
         lsu_data_t data;
-    } lsu_be_done_pld_t;
-
-    typedef struct packed {
-        lsu_tag_t   tag;
-        lsu_cause_t cause;
-        lsu_data_t  tval;
-    } lsu_be_exception_pld_t;
+    } lsu_be_bypass_pld_t;
 
     // Logical memory operation names handed to the ISA model shim.
     typedef enum logic [4:0] {
