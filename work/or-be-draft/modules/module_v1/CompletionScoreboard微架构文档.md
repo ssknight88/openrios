@@ -2,7 +2,7 @@
 
 v2 把三样东西收进同一个退休权威：v1 CompletionScoreboard 的 per-tag 生命周期、
 v1 commit_unit 的整条判定链、v1 Buffer 的控制侧（head/tail 指针、alloc 批、writeback 事件批）。
-数据平面留在外面——`result_data` 在 [[Buffer微架构文档.md]]、`inst_pc` 在
+数据平面留在外面——`result_data` 在 [[archive/module_spec_v1/Buffer微架构文档]]、`inst_pc` 在
 [[PC_File微架构文档.md]]，三个 16 格阵列共用本模块 `tail` 的 4-bit tag 地址算术，
 分配位置天然一致。
 

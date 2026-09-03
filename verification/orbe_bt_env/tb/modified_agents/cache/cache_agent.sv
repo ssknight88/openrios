@@ -611,11 +611,11 @@ class cache_agent;
     int tag;
     int idx;
 
-    vif.lsu_be_done_valid <= 1'b0;
+    vif.lsu_be_done_valid_q <= 1'b0;
     vif.lsu_be_done_pld <= '0;
-    vif.lsu_be_exception_valid <= 1'b0;
+    vif.lsu_be_exception_valid_q <= 1'b0;
     vif.lsu_be_exception_pld <= '0;
-    vif.lsu_be_bypass_valid <= 1'b0;
+    vif.lsu_be_bypass_valid_q <= 1'b0;
     vif.lsu_be_bypass_pld <= '0;
 
     terminal_driven = 1'b0;
@@ -632,7 +632,7 @@ class cache_agent;
       if (e == null) continue;                 // already flushed away
       if (!e.exception_valid || e.exception_sent) continue;
       e.exception_sent = 1'b1;
-      vif.lsu_be_exception_valid <= 1'b1;
+      vif.lsu_be_exception_valid_q <= 1'b1;
       vif.lsu_be_exception_pld.tag <= e.pld.self_tag;
       vif.lsu_be_exception_pld.cause <= e.exception_cause;
       vif.lsu_be_exception_pld.tval <= e.exception_tval;
@@ -652,13 +652,13 @@ class cache_agent;
       if (e == null) continue;
       if (e.done_ready_cycle > cycle_count) continue;
 
-      vif.lsu_be_done_valid <= 1'b1;
+      vif.lsu_be_done_valid_q <= 1'b1;
       vif.lsu_be_done_pld.tag <= e.pld.self_tag;
       vif.lsu_be_done_pld.data <= read_side(e) ? e.result : '0;
       // The broadcast rides this one cycle and is never repeated, so it is
       // only meaningful for a request that produced a register result.
       if (read_side(e)) begin
-        vif.lsu_be_bypass_valid <= 1'b1;
+        vif.lsu_be_bypass_valid_q <= 1'b1;
         vif.lsu_be_bypass_pld.tag <= e.pld.self_tag;
         vif.lsu_be_bypass_pld.data <= e.result;
       end
@@ -678,9 +678,9 @@ class cache_agent;
 
   task run();
     vif.lsu_store_buffer_full <= 1'b0;
-    vif.lsu_be_done_valid <= 1'b0;
-    vif.lsu_be_exception_valid <= 1'b0;
-    vif.lsu_be_bypass_valid <= 1'b0;
+    vif.lsu_be_done_valid_q <= 1'b0;
+    vif.lsu_be_exception_valid_q <= 1'b0;
+    vif.lsu_be_bypass_valid_q <= 1'b0;
     clear_all_state();
     cycle_count = 0;
     next_be_phase_seq = phase_vif.dpi_be_phase_seq + 1;

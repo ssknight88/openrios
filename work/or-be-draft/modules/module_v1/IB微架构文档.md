@@ -54,7 +54,7 @@ deq_count     = dequeue[0] + dequeue[1]     // rptr += deq_count
 
 端点为**输入端口 / entry / 输出端口**三者。
 
-### 1. `entry.IB_Payload`
+### 1. `entry.IB_Payload`（in）
 
 ```text
 enqueue 输入端口 → entry[wptr + n]    整条 IB_Payload
