@@ -64,12 +64,12 @@
 							- `frm_illegal = (frm == RM_RSV5) ∨ (frm == RM_RSV6) ∨ (frm == RM_DYN)`
 ```
 
-- 上例中每一层只列出该公式的直接依赖；`fp_illegal` 与 `full_decode.illegal` 是 `illegal_effective` 的同级依赖，`rm_is_reserved` 与 `frm_illegal` 是 `rm_illegal` 的同级依赖。终端输入只引用所属 Interface；派生项必须位于产生它们的上一级公式下。
+- 上例中每一层只列出该公式的直接依赖；`fp_illegal` 与 `full_decode.illegal` 是 `illegal_effective` 的同级依赖，`rm_is_reserved` 与 `frm_illegal` 是 `rm_illegal` 的同级依赖。终端输入只引用所属的本模块 Interface、子模块公开 Interface；派生项必须位于产生它们的上一级公式下。
 - 公式树验收条件：
   1. 根对象只有一个编号，且编号行包含 schema 和语义。
   2. 根对象的第一层缩进必须是根公式；不得先列派生项再列根公式。
   3. 公式中的每个直接依赖各占一个同级缩进项；依赖 A 只有在 B 的公式中出现时才能缩进到 B 下。
-  4. 依赖项的定义式紧跟在该依赖项的下一层；没有本地定义式的终端输入只写名称或 Interface 引用。
+  4. 依赖项的定义式紧跟在该依赖项的下一层；没有本地定义式的终端输入只写名称、本模块 Interface 或子模块公开 Interface 引用。
   5. 同一派生项在同一对象下只定义一次；后续出现只写名称或引用。
   6. 下列写法不合规：
 
@@ -109,13 +109,23 @@
 2. `submodule_b`：`path/to/submodule_b.md`
 ```
 
+若 submodule 只实例一份，不给实例名（采用上面的例子模板）。若同一个 submodule 存在多个实例，则需要给实例名；：
+
+```text
+1. `submodule_a`：`path/to/submodule_a.md`，实例名 sub_module_a_<index_number_or_name_1>
+2. `submodule_a`：`path/to/submodule_a.md`，实例名 sub_module_a_<index_number_or_name_2>
+```
+
 ### 父模块与私有子模块
 
 - 私有子模块只描述自己的局部输入、局部输出和局部 Internal Connections；不得在端点名称中携带父模块、上游 module 或更高层来源，例如 `ib_*`、`fe_*`。
 - 私有子模块只写“我要什么”和“产生什么”。输入信号由父模块在 `Internal Connections` 中从父模块已有的 Interface、Data structure 或其他子模块输出连入。
 - 父模块负责字段拆分、子模块之间的连线、子模块结果汇合，以及把局部结果映射为父模块的 public Interface。
 - 子模块的局部端点只对父模块可见；其他 public module、stage index 和 integration-layer 不得直接引用这些端点。
-- 父模块引用子模块接口时，使用 `submodule_name.interface_name` 形式；其中 `interface_name` 必须是该子模块 `Interface` 中已经定义的 Event 和 Static Info。例如，子模块 rvc_expand 里定义了 `inst32` 的 Out Static Info，在父模块引用方式为 `rvc_expand.inst32`。不得另造名称。此引用规则适用于父模块的 `Internal Connections`、`Interface`、`FSM` 和其他需要引用子模块接口的章节。
+- 父模块引用子模块接口时，使用 `submodule_name.interface_name` 形式；其中 `interface_name` 必须是该子模块 `Interface` 中已经定义的 Event 和 Static Info。
+	- 例1，子模块 rvc_expand 里定义了 `inst32` 的 Out Static Info，在父模块引用方式为 `rvc_expand.inst32`。
+	- 例2，子模块 FU_input_mux 里定义了 `entry_rsX_data` 的 In Static Info，且父模块实例了多个 FU_input_mux（FU_input_mux_rs1 和 FU_input_mux_rs2），则引用方式对应为 `FU_input_mux_rs1.entry_rsX_data` 和 `FU_input_mux_rs2.entry_rsX_data`。
+不得另造名称。此引用规则适用于父模块的 `Internal Connections`、`Interface`、`FSM` 和其他需要引用子模块接口的章节。
 - 子模块对应的局部接口只保留局部名称。例如 rvc_expand 里用 `inst32`，而非 `rvc_expand.inst32`。
 
 ## FSM
@@ -202,27 +212,16 @@ FSM 描述控制通路：哪些真实状态存在、哪些 `Event` 驱动状态�
 
 该示例的阅读方式是固定的：`3.` 是 Event 主项；其下四个 Tab 一级 bullet 是该 Event 的平级组成部分；只有 `Fire来源` 下的信号依赖继续缩进。`Constraint`、`Payload` 和 `State update` 不属于 fire 依赖树。
 
-Interface 的编号和缩进同样遵循此格式：
-
-```text
-### In Static Info
-1. `inst_valid[s]`：1 bit，`s∈{0,1}`；当前 slot 是否存在有效 payload。
-2. `downstream_ready`：1 bit；下游当前拍是否可接收。
-
-### Out-event
-1. `issue[s]`：Transaction，`s∈{0,1}`，payload=`issue_payload[s]`。
-	- `issue[s].fire = issue_valid[s] ∧ downstream_ready`
-	- `issue_payload[s]`：本拍 fire 时被下游采样的 payload。
-```
+Interface 的编号和缩进同样遵循此格式。
 
 具体要求：
 
 - fire 是仅当拍有效的可求值布尔表达式；下一拍重新判断。
-- `Fire来源` 行直接写完整 fire 表达式，不另建 `fire` 子项。
+- `Detailed Condition Description` 中的 `Fire来源` 行直接写完整 fire 表达式，不另建 `fire` 子项。
 - fire 表达式中的每个直接输入信号都作为 `Fire来源` 的下一级 bullet，先写语义，再按依赖关系继续缩进其定义式。
-- 中间信号按表达式依赖树逐级缩进，直到每个信号都能在 `Data structure` 或 `Interface` 找到。
+- 中间信号按表达式依赖树逐级缩进，直到每个信号都能在 `Data structure`、本模块 `Interface` 或子模块公开 `Interface` 找到。
 - `Constraint`、`Payload`、`State update` 与 `Fire来源` 平级；它们内部需要展开的字段继续在所属 bullet 下缩进。
-- Detailed Condition 中每个非本 module 的直接输入 Event 必须在 `Interface -> In-event` 出现；直接读取的外部持续值必须在 `Interface -> In Static Info` 出现；本 module 自己计算出的状态投影、ready 或其他 Static Info 必须能在 `Data structure` 或 `Out Static Info` 找到。
+- Detailed Condition 中每个非本 module 的直接输入 Event 必须在 `Interface -> In-event` 出现；直接读取的外部持续值必须在 `Interface -> In Static Info` 出现；本 module 自己计算出的状态投影、ready 或其他 Static Info 必须能在 `Data structure` 或 `Out Static Info` 找到；使用到的 submodule 计算出的状态投影、ready 或其他 Static Info 必须能在 submodule 的公开 `Interface` 找到。
 - 组合条件必须互斥且完备；不可达组合写出约束，但不为约束另造 Event。
 - Event 的 payload、slot 数和拍数在本处写出 schema；对外输出的同一项在 `Interface` 再归档一次，名称和定义必须一致。
 - 不在本节说明外部来源；外部输入统一在 `Interface -> In-event` 或 `In Static Info` 归档。
@@ -231,7 +230,7 @@ Interface 的编号和缩进同样遵循此格式：
 
 ## Data structure
 
-描述本 module 真正保存或持续组合产生的数据结构，并写明更新时机。这里只写结构和字段，不重复写完整 fire 推导。
+描述本 module 真正保存或持续组合产生的数据结构，并写明更新时机。有 FSM 时这里只写结构和字段，不重复完整 fire 推导和 state update；没有 FSM、但包含真实存储时，按本章 `Payload` 的无 FSM 规则定义更新时机和具体更新。
 
 ### State
 
@@ -296,13 +295,53 @@ Interface 的编号和缩进同样遵循此格式：
 	- `CompletionScoreboard_commit_payload`：`fpu_fflags`。
 ```
 
+有 FSM 且存储更新时机和具体更新已经在 `FSM -> Detailed Condition Description` 中定义的 module 采用上述写法，不得增加其他信息或重复已有的定义和逻辑推导。对于没有 FSM、但包含真实存储的 module，存储的更新时机和具体更新无法在 `FSM -> Detailed Condition Description` 中定义，必须在对应的 `Data structure -> Payload` 条目中定义。在现有的来源 payload 和字段之后，依次增加与来源同级的 `更新时机` 和 `Update` bullet：
+
+```text
+1. `entry.payload[index]`：来源于 `Module_payload`。
+	- `Module_payload`：`field_a`、`field_b`、`field_c`。
+	- 更新时机：`update_condition = expression`；采样或更新时序。
+		- `direct_dependency_a`：语义或 Interface 引用
+		- `direct_dependency_b`：语义或 Interface 引用（如为派生值，继续在下一层写定义式）
+	- Update：`entry.payload[index]^+ = expression`。
+		- `update_condition`：引用本条“更新时机”中的定义。
+		- `payload_field`：见本条来源 payload 字段。
+		- `entry.payload[index]`：更新前的存储值；无更新条件成立时保持。
+```
+
+`更新时机` 定义存储何时采样或改变，必须写清组合条件、时钟边沿以及同步或异步属性。`Update` 定义该时机对应的完整存储更新式，必须覆盖写入地址、写入数据、多来源优先级、保持和复位行为。二者出现的派生条件和值按本规则的公式树逐级展开，直到每个终端名称都能在本条来源字段、`Data structure`、本模块 `Interface` 或子模块公开 `Interface` 中找到；已经在本条前文定义的名称只引用，不重复展开。不得增加其他信息或重复已有的定义和逻辑推导。
+
+`FP_ARF` 示例：
+
+```text
+1. `entry.payload[i]`：来源于 `FP_ARF_payload[k]`，`i∈{0,...,NUM_FPR-1}`。
+	- `FP_ARF_payload[k]`：`commit_data[k]`。
+	- 更新时机：`¬rst_n` 时异步更新；`rst_n ∧ write_enable` 成立时在上升沿更新。
+		- `rst_n`：见 `Interface -> In Static Info`。
+		- `write_enable = ∃k∈{0,...,ISSUE_WIDTH-1}: write_req[k]`
+			- `write_req[k] = commit_valid[k].fire ∧ rd_write_enable[k] ∧ rd_is_fp[k]`
+				- `commit_valid[k].fire`：见 `Interface -> In-event`。
+				- `rd_write_enable[k]`：见 `Interface -> In-event`。
+				- `rd_is_fp[k]`：见 `Interface -> In-event`。
+	- Update：`entry.payload[i] <- ¬rst_n ? 0 : (write_req[0] ∧ i=rd_idx[0]) ? commit_data[0] : (write_req[1] ∧ i=rd_idx[1]) ? commit_data[1] : entry.payload[i]`。
+		- `rst_n`：见本条“更新时机”。
+		- `write_req[k]`：见本条“更新时机”。
+		- `rd_idx[k]`：见 `Interface -> In-event`。
+		- `commit_data[k]`：见本条来源 payload 字段。
+		- `entry.payload[i]`：更新前的存储值。
+```
+
+无 FSM 模块中，存储写入已由本节“更新时机”和“Update”完整定义，则不得在 `Internal Connections` 中重复记录该写入连接。
+
 命名规则：进入本 module 的 payload 为 `` `<Module>_payload` ``；传给下游 module 的 payload 为 `` `<DownstreamModule>_payload` ``；存储端点统一为 `entry.payload`。不得另造 `*_storage`、`head_*`、`entry_payload` 或 `*_transfer` 等同义名称。
 
 FIFO 或寄存器阵列的组合读是持续的 Static Info。若 `dequeue`/`read` 的 payload 为 `∅`，它只更新指针或状态，不触发 payload 读取；相关的写入和组合读的连接，只有在无法由 FSM、Data structure 或 Interface 完整确定时，才在 Internal Connections 中显式表达。
 
+注意：`Data structure -> Payload` 的字段使用统一的存储路径：凡在 `Internal Connections`、`FSM`、`Interface` 或其他章节引用 entry payload 字段，必须写成 `entry.payload.<field>` 形式；不得使用内部寄存器名（如 `entry_<field>`）作为该字段的文档端点。
+
 ## Internal Connections
 
-描述本 module 内部无法由 `FSM`、`Data structure` 和 `Interface` 完整确定的连接关系。连接可以承载 Static Info 和 Event；端点包括父 module 的输入、`Data structure` 以及 submodule 的公开 Interface。
+描述本 module 内部无法由 `FSM`、`Data structure` 和 `Interface` 完整确定的连接关系：`Internal Connections` 只记录本 module 内部无法由 `FSM`、`Data structure` 的状态/更新定义以及 `Interface` 的输出公式唯一推出的额外连接；已经在 `Payload -> Update` 或 `Out Static Info` 公式中完整定义的写入、读取和组合传递不得重复记录。连接可以承载 Static Info 和 Event；端点包括父 module 的输入、`Data structure` 以及 submodule 的公开 Interface。
 
 本节不重复描述已经在 `FSM`、`Data structure` 或 `Interface` 中完整定义的使用关系、fire、状态更新、输出产生式和时序。只要一个数据或控制连接无法从其他章节唯一确定，就必须在本节显式写出，包括无 payload Event 到 submodule Interface 的连接。
 
@@ -363,12 +402,14 @@ Interface 是 module 的唯一对外契约归档点。它从 FSM、Data structur
 
 ### In-event
 
-列出本 module 从模块边界收到、且被 `Detailed Condition Description` 或本地状态动作使用的输入信号。In-event 按本 module 的局部语义命名，只写类型、payload、数量和本 module 的使用方式，不写生产者或上游 module 名称。一个 Transaction 可以由一个 valid 信号和本模块的 ready 共同形成 fire；此时 valid/payload 仍作为一个本地 In-event 条目记录：
+列出本 module 从模块边界收到、且被 `Detailed Condition Description` 或本地状态动作使用的输入信号。In-event 按本 module 的局部语义命名，只写类型、payload、数量和本 module 的使用方式，不写生产者或上游 module 名称。一个 Transaction 可以由一个 valid 信号和本模块的 ready 共同形成 fire；此时 valid/payload 仍作为一个本地 In-event 条目记录。
+
+对 Notify 类型的 in-event，fire 来源于本模块外部的 event 生产者，因此写 Fire 来源： `signal.fire`。对 valid/ready Transaction 类型的 in-event，握手 fire 由本模块的 FSM 定义，因此写 Fire 来源：见 `FSM -> Detailed Condition Description` 第 N 条。In-event 的 Fire来源 是引用，不是新的 fire 定义点，不重新展开。
 
 ```text
 1. `event_name`：Event 类型，索引变量定义
-	- fire = `fire_signal`
-	- payload = `PayloadName`；时序
+	- Fire来源：`signal.fire` 或 见 `FSM -> Detailed Condition Description` 第 N 条
+	- Payload：`PayloadName`；时序
 	`PayloadName`：每个 payload 字段及其位宽 schema (只有一个字段时，直接在 `payload` 行写字段名、位宽、数量和时序，不另起 schema 行)
 ```
 
@@ -376,12 +417,12 @@ Interface 是 module 的唯一对外契约归档点。它从 FSM、Data structur
 
 ```text
 1. `alloc[s]`：Notify，`s∈{0,1}`
-	- fire = `accept[s]`
-	- payload = `CompletionScoreboard_alloc_payload`；上升沿采样
+	- Fire来源：`accept[s].fire`
+	- Payload：`CompletionScoreboard_alloc_payload`；上升沿采样
 	`CompletionScoreboard_alloc_payload`：`alloc_self_tag` 16 bit × 2、`rd_idx` 5 bit × 2、`rd_is_fp` 1 bit × 2、`rd_write_enable` 1 bit × 2、`is_store` 1 bit × 2、`is_fence_i` 1 bit × 2、`may_flush` 1 bit × 2、`is_atomic` 1 bit × 2
 ```
 
-无 payload 时保留 `payload = ∅` 行；payload 只有一个字段时，直接在 `payload` 行写成“字段名 位宽 × 数量”形式，不另起 schema 行；payload 有多个字段时，`payload` 行写 `PayloadName`，再以同一缩进且不加 bullet 的行列出其字段 schema。Event 条目只包含上述事件名、类型、索引变量、fire、payload、时序和 schema 信息。
+无 payload 时保留 `Payload：∅` 行；payload 只有一个字段时，直接在 `Payload` 行写成“字段名 位宽 × 数量”形式，不另起 schema 行；payload 有多个字段时，`Payload` 行写 `PayloadName`，再以同一缩进且不加 bullet 的行列出其字段 schema。Event 条目只包含上述事件名、类型、索引变量、fire、payload、时序和 schema 信息。
 
 `Transaction` 需要 valid/ready 或 credit 握手；`Notify` 为生产者 fire-and-forget，消费者保证可接收。对于 valid/ready Transaction，握手 fire 是双方共同的 `valid ∧ ready`：拥有 `ready`、捕获动作和相关状态更新的接收方，必须在自己的 `FSM / Detailed Condition Description` 定义该 fire；生产者保持 valid 和 payload，直到 fire。接收方可以额外输出 `accept` Event 给生产者，且 `accept.fire` 必须等于同一次 Transaction fire。In-event 与 Out-event 可以使用相同字面名称，方向、payload 和所在分组共同定义其语义；它们不是同一个接口对象。
 
@@ -413,25 +454,74 @@ Notify 的 payload 可以为 `∅`。当消费者需要在该 Notify fire 的同
 
 ### Out-event
 
-列出本 module 实际产生并驱动模块边界外动作的 Event。Out-event 使用与 In-event 相同的条目格式；其 `fire`、payload schema 和时序在此归档。由 In-event 触发的本地状态更新只写在 FSM。有 FSM 时，Out-event 的 fire 必须引用对应的 State Transition/Detailed Condition；端点名可以不同，例如 `IB.accept.fire = IB.enqueue.fire`。没有 FSM 时，组合产生的有效、ready、选择、路由和数据视图归入 Out Static Info；零 state module 没有 transition 时，Out-event 只在本节定义。
+列出本 module 实际产生并驱动模块边界外动作的 Event。Out-event 使用与 In-event 相同的条目格式；其 `fire`、payload schema 和时序在此归档。由 In-event 触发的本地状态更新只写在 FSM。有 FSM 时，Out-event 的 fire 必须引用对应的 State Transition/Detailed Condition；端点名可以不同，例如 `IB.accept.fire = IB.enqueue.fire`。（注意：`fire` 的“归档”不包含 fire 逻辑定义：有 FSM 时，Out-event 的 Fire来源 只能写“见 FSM -> Detailed Condition Description 第 N 条”，不得在本节写 fire 表达式或展开其依赖树。）
+
+Out-event 的 payload 在 fire 时有效，payload 每个字段必须且只能在此定义一次取值，不得遗漏，也不得增加 schema 外字段。无论 module 是否有 FSM，每个 payload 字段的取值都必须按公式树逐级递归展开，直到每个终端名称都能在 `Data structure`、本 module `Interface` 或 submodule 的公开 `Interface` 中找到；已经在本 module 前文定义的名称只引用，不重复展开。每个 payload 字段公式下的所有直接来源都必须补充显式章节引用，格式为“见 `章节` 第 N 条”；该引用只标明来源位置，不重复展开已定义公式。
 
 ```text
 1. `event_name`：Event 类型，索引变量定义
-	- fire = `fire_signal` （有 FSM 时，只写见 `FSM -> Detailed Condition Description` 第 N 条）
-	- payload = `PayloadName`；时序
+	- Fire来源：见 `FSM -> Detailed Condition Description` 第 N 条
+	- Payload：`PayloadName`；时序。
 	`PayloadName`：每个 payload 字段及其位宽 schema (只有一个字段时，直接在 `payload` 行写字段名、位宽、数量和时序，不另起 schema 行)
+		- `field_1 = value_1`
+			- `value_1`：引用来源。
+		- `field_2 = expression_2`
+			- （展开公式树直到能在 `Data structure`、本 module `Interface` 或 submodule 的公开 `Interface` 中找到）
 ```
 
-例子：
+例子（有 FSM）：
 
 ```text
 1. `store_wakeup`：Notify，单 lane
-	- fire = 见 `FSM -> Detailed Condition Description` 第 4 条
-	- payload = `store_wakeup_tag` 4 bit × 1；当拍 pulse
+	- Fire来源：见 `FSM -> Detailed Condition Description` 第 4 条
+	- Payload：`store_wakeup_tag` 4 bit × 1；当拍 pulse
+		- `store_wakeup_tag = ...`
+			- ...
+				- `some_leaf_signal_1`：见 `章节` 第 N 条。
 2. `flush`：Notify，单 lane
-	- fire = 见 `FSM -> Detailed Condition Description` 第 6 条
-	- payload = `CompletionScoreboard_flush_payload`；当拍 announce
+	- Fire来源：见 `FSM -> Detailed Condition Description` 第 6 条
+	- Payload：`CompletionScoreboard_flush_payload`；当拍 announce。
 	`CompletionScoreboard_flush_payload`：`flush_tag` 4 bit × 1、`recovery_kind` 3 bit × 1
+		- `flush_tag = ...`
+			- ...
+				- `some_leaf_signal_2`：见 `章节` 第 N 条。
+		- `recovery_kind = ...`
+			- ...
+				- `some_leaf_signal_3`：见 `章节` 第 N 条。
+```
+
+无 FSM 时，有 fire 的组合事件（fire 条件组和逻辑、对应 payload 逐字段组合逻辑）必须在此定义并完整推导，此时 Out-event 条目 fire 条件下的直接依赖按公式树递归展开，直到已定义的 Interface、Data structure 或子模块公开 Interface。`- Fire来源：...` 之后说明 Constraint。若存在 payload，在 `- Payload：...` 行下一级以 bullet 逐字段写出 `payload_field = signal`，并按公式树递归展开。带索引的 Event 若所有索引可由同一 fire 表达式和索引变量描述则不拆分，否则按索引拆分为多个 Out-event 条目。零 state module 没有 transition 时，Out-event 只在本节定义。
+
+例子 （无FSM）：
+
+```text
+1. `accept[0]`：Notify，单 lane。
+	- Fire来源：`accept[0].fire = inst_valid[0] ∧ slot0_guard_ok`
+		- `inst_valid[0]`：见 `Interface -> In Static Info` 第 1 条。
+		- `slot0_guard_ok = ...
+			- ...
+				- ...
+					- ...（完整公式树）
+			- ...（完整公式树）
+	- Constraint：无额外约束。
+	- Payload：∅；当前拍 pulse。
+2. `accept[1]`：Notify，单 lane。
+	- Fire来源：`accept[1].fire = accept[0] ∧ inst_valid[1] ∧ slot1_guard_ok`
+		- `accept[0]`：见本节第 1 条 fire。
+		- `inst_valid[1]`：见 `Interface -> In Static Info` 第 1 条。
+		- `slot1_guard_ok = ...
+			- ...
+				- ...（完整公式树）
+			- ...（完整公式树）
+	- Constraint：`accept[1] -> accept[0]`。
+	- Payload：∅；当前拍 pulse。
+3. `serial_set_valid`：Notify，单 lane。
+	- Fire来源：`serial_set_valid.fire = accept[0] ∧ serial0`
+		- `accept[0]`：见本节第 1 条 fire。
+		- `serial0`：见 `Interface -> In Static Info` 第 2 条。
+	- Payload：`serial_set_tag`，`TAG_W` bit × 1；当前拍 pulse。
+		- `serial_set_tag = self_tag`
+			- `self_tag`：见 `Interface -> In Static Info` 第 17 条。
 ```
 
 Out-event 必须由本 module 向外驱动。消费者的 In-event 即使会更新本地 state，也不在 Out-event 重复登记；例如 dispatch_logic 的 Out-event `accept[s]` 连到 IB 的 In-event `accept[s]`，IB 的 `dequeue[s]` 只写在 FSM。
