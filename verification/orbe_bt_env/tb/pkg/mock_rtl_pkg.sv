@@ -36,12 +36,12 @@ package mock_rtl_pkg;
     exception_cause_t exception_cause;
     logic [63:0] exception_tval;
     logic        is_lsu;
-  } rename_rob_t;
+  } rob_alloc_pld_t;
 
   typedef struct packed {
     logic [63:0] pc;
     logic [MOCK_ROB_PTR_W-1:0] rob_idx;
-  } rob_rename_t;
+  } rob_commit_pld_t;
 
   typedef struct packed {
     logic is_load;
@@ -51,10 +51,10 @@ package mock_rtl_pkg;
     logic is_sc;
     logic is_fence;
     logic is_fence_i;
-  } lsu_req_property_t;
+  } mock_lsu_req_property_t;
 
   typedef struct packed {
-    lsu_req_property_t req_property;
+    mock_lsu_req_property_t req_property;
     logic [23:0] exe_subop;
     logic [2:0] mem_funct3;
     logic       rd_is_fp;
@@ -67,7 +67,7 @@ package mock_rtl_pkg;
 
   typedef struct packed {
     logic [MOCK_ROB_TAG_W-1:0] self_tag;
-    lsu_req_property_t req_property;
+    mock_lsu_req_property_t req_property;
     logic [23:0] exe_subop;
     logic [2:0] mem_funct3;
     logic       rd_is_fp;

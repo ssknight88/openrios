@@ -1,0 +1,20 @@
+# Build and simulation output
+/sim/*/build/
+/sim/*/log/
+/sim/*/regress/
+/sim/verilator_*/
+/obj_dir*/
+/mock_tb/build/
+
+# Simulator artifacts
+*.log
+*.fsdb
+*.vcd
+simv
+csrc/
+ucli.key
+novas.*
+
+# Local dependency drops
+/third_party/
+/archive/

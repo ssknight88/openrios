@@ -10,13 +10,25 @@ package exe_subop_pkg;
     // these constants, but must never replace this 24-bit encoding.  Encoding
     // is intentionally derived from instruction fields so a decoder and a
     // trace checker can reconstruct the same identity without a table index.
-    // Version 5 adds SYSTEM sub-operations for SFENCE.VMA, SRET and WFI.
-    // Existing constant values are preserved; the version bump only expands
-    // the supported sub-operation set.
+    // v5 (2026-08-25)：新增 SUBOP_SFENCE_VMA。键取 funct7 而非 funct12，
+    // 理由见其定义处。同样并入 is_g0_sys_subop，既有常量的值仍未变。
+    //
+    // **授权方式与 v4 不同，记下来**：
+    //   v4  改动**之前**按 RTL实施计划 §9.4 停下来问过，人明确授权后才动。
+    //   v5  **先改了，事后才追认**（2026-08-25）。
+    // §9.4 要求的是前者。v5 之所以被接受，是因为它与 v4 是同一模式、
+    // 且当时的任务指令本身就要求实现 SFENCE.VMA —— **这是特例，不是新惯例**。
+    // 下一次要改这个包，仍然先停下来问。
+    //
+    // v4 (2026-08-25)：新增 SUBOP_SRET / SUBOP_WFI 两个 SYSTEM 子码，
+    // 并把它们并入 is_g0_sys_subop。**既有常量的值一个都没有变**，
+    // v3 的消费者按值比对不受影响；改的只是「集合里多了两个成员」。
+    // 授权见 RTL实施计划 §3 S9（§9.4 要求改冻结包必须停下来问，已问过）。
     localparam int EXE_SUBOP_SPEC_VERSION = 5;
 
     // Frozen package for OR-BE decoded instruction IDs.
-    // Source of truth for opcode/funct fields is this package.
+    // Source of truth for opcode/funct fields is this package and the v3
+    // BE_LSU interface specification.
     //
     // Current policy:
     //   exe_subop = one decoded instruction ID per supported instruction.

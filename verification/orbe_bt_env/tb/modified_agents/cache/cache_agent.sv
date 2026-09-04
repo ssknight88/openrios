@@ -4,7 +4,7 @@
 // memory service front end of the shared ISA model.  One issue handshake
 // carries the whole request, so there is no separate address/data pairing:
 // the record is created, executed, serviced and retired under a single
-// 4-bit self_tag.
+// 4-bit tag.
 //
 // Ownership boundaries (unchanged from the reference environment):
 //   - the shared model is created and destroyed elsewhere;
@@ -67,11 +67,13 @@ class cache_pending;
   endfunction
 endclass
 
-class cache_agent;
+class cache_agent #(int unsigned COSIM_ISSUE_NUM,
+                    int unsigned COSIM_ROB_ADDR_W);
   localparam int unsigned MODEL_CORE_ID = 0;
   localparam int LSU_TAG_SPACE = 1 << LSU_TAG_W;
   virtual or_be_lsu_if vif;
-  virtual ob_if        phase_vif;
+  virtual ob_if phase_vif;
+  virtual ob_cosim_if #(COSIM_ISSUE_NUM, COSIM_ROB_ADDR_W) ob_cosim_vif;
   be_config            cfg;
 
   // Whitelist of RISC-V synchronous exception numbers the model may name.
@@ -112,19 +114,19 @@ class cache_agent;
   bit stop_requested;
 
   function new(virtual or_be_lsu_if vif_, virtual ob_if phase_vif_,
-               be_config cfg_);
+               virtual ob_cosim_if #(COSIM_ISSUE_NUM, COSIM_ROB_ADDR_W)
+                   ob_cosim_vif_, be_config cfg_);
     vif = vif_;
     phase_vif = phase_vif_;
+    ob_cosim_vif = ob_cosim_vif_;
     cfg = cfg_;
     if (cfg == null)
       be_reporter::fatal_static("[CACHE] cache_agent requires a non-null be_config");
-    if (phase_vif_ == null)
-      be_reporter::fatal_static("[CACHE] cache_agent requires a non-null BE phase interface");
     // Tag uniqueness among live records is only guaranteed while the tag
     // space and the retire-ordering resource have the same size.  Catch a
     // parameter change here rather than as a corrupted record later.
     if (LSU_TAG_W != 4)
-      cfg.reporter.fatal($sformatf("cache_agent assumes a 4-bit self_tag; got %0d", LSU_TAG_W));
+      cfg.reporter.fatal($sformatf("cache_agent assumes a 4-bit tag; got %0d", LSU_TAG_W));
     next_order = 0;
     cycle_count = 0;
     early_store_wakeup_pending = 1'b0;
@@ -133,42 +135,72 @@ class cache_agent;
     terminal_tag = 0;
     model_exit_seen = 1'b0;
     stop_requested = 1'b0;
+    ob_cosim_vif.mem_store_commit_valid = 1'b0;
+    ob_cosim_vif.mem_store_commit_order = '0;
+    ob_cosim_vif.mem_store_commit_vaddr = '0;
+    ob_cosim_vif.mem_store_commit_data = '0;
+    ob_cosim_vif.mem_store_commit_mask = '0;
+    ob_cosim_vif.mem_store_commit_pc = '0;
+    ob_cosim_vif.mem_store_commit_rob_idx = '0;
+    ob_cosim_vif.mem_store_commit_terminal = 1'b0;
     cfg.print_cache(1, "[CACHE] OR-BE LSU agent ready; shared model flush owner=BE");
   endfunction
 
-  task automatic fail(string message);
+  function automatic void fail(string message);
     cfg.reporter.fatal($sformatf("[CACHE] %s", message));
-  endtask
+  endfunction
 
   // ------------------------------------------------------------------
   // Small helpers
   // ------------------------------------------------------------------
 
   // The model indexes an instruction by its own slot number.  OR-BE hands
-  // out that same slot as self_tag, so no narrowing is involved; the wrapper
+  // out that same slot as tag, so no narrowing is involved; the wrapper
   // exists so a future width change has one place to change.
   function automatic longint unsigned dpi_rob_idx(input int tag);
     return longint'(tag);
   endfunction
 
+  function automatic lsu_req_property_t issue_property(
+      input be_lsu_issue_pld_t pld);
+    return req_property_from_subop(pld.exe_subop);
+  endfunction
+
   function automatic bit read_side(cache_pending e);
-    return req_property_is_read_side(e.pld.req_property);
+    return req_property_is_read_side(issue_property(e.pld));
   endfunction
 
   function automatic bit store_side(cache_pending e);
-    return req_property_is_store_side(e.pld.req_property);
+    return req_property_is_store_side(issue_property(e.pld));
   endfunction
 
   function automatic bit plain_store(cache_pending e);
-    return req_property_is_plain_store(e.pld.req_property);
+    return req_property_is_plain_store(issue_property(e.pld));
   endfunction
 
   function automatic bit misc_side(cache_pending e);
-    return e.pld.req_property.is_fence || e.pld.req_property.is_fence_i;
+    lsu_req_property_t p;
+    p = issue_property(e.pld);
+    return p.is_fence || p.is_fence_i;
   endfunction
 
   function automatic longint unsigned access_length(cache_pending e);
     return longint'(mem_funct3_bytes(e.pld.mem_funct3));
+  endfunction
+
+  function automatic logic [7:0] store_byte_mask(cache_pending e);
+    logic [7:0] mask;
+    int unsigned bytes;
+    int unsigned offset;
+
+    mask = '0;
+    bytes = mem_funct3_bytes(e.pld.mem_funct3);
+    offset = e.vaddr[2:0];
+    for (int unsigned byte_idx = 0; byte_idx < bytes; byte_idx++) begin
+      if ((offset + byte_idx) < 8)
+        mask[offset + byte_idx] = 1'b1;
+    end
+    return mask;
   endfunction
 
   function automatic int model_memop(cache_pending e);
@@ -193,12 +225,74 @@ class cache_agent;
     endcase
   endfunction
 
+  function automatic logic [23:0] canonical_exe_subop(input logic [23:0] raw);
+    logic [23:0] canonical;
+    canonical = raw;
+    if (raw[23:22] == 2'b10) begin
+      // The ISA model encodes RVC {funct3, op}; OR-BE stores only the
+      // compressed quadrant op in this field.
+      canonical[21:17] = 5'b0;
+      canonical[11:0] = 12'b0;
+    end
+    return canonical;
+  endfunction
+
+  function automatic bit shared_model_lsu_payload_ready(cache_pending e);
+    byte unsigned req_property;
+    int unsigned exe_subop;
+    byte unsigned mem_funct3;
+    byte unsigned rd_is_fp;
+    longint unsigned rs1_data;
+    longint unsigned rs2_data;
+    byte unsigned imm_valid;
+    longint signed imm_data;
+    byte unsigned is_store;
+    logic [6:0] rtl_req_property;
+    logic [23:0] rtl_exe_subop;
+    logic [23:0] model_exe_subop;
+    longint signed rtl_imm_data;
+    int rc;
+
+    rc = isa_dpi_get_lsu_issue_metadata(
+        MODEL_CORE_ID, dpi_rob_idx(int'(e.pld.tag)), req_property, exe_subop,
+        mem_funct3, rd_is_fp, rs1_data, rs2_data, imm_valid, imm_data,
+        is_store);
+    if (rc != ISA_API_PASS)
+      fail($sformatf("get_lsu_issue_metadata tag=%0d rc=%0d", e.pld.tag, rc));
+
+    rtl_req_property = issue_property(e.pld);
+    rtl_exe_subop = canonical_exe_subop(e.pld.exe_subop);
+    model_exe_subop = canonical_exe_subop(exe_subop[23:0]);
+    rtl_imm_data = $signed(e.pld.imm_data);
+
+    if ((req_property[6:0] !== rtl_req_property) ||
+        (model_exe_subop !== rtl_exe_subop) ||
+        (mem_funct3[2:0] !== e.pld.mem_funct3) ||
+        ((rd_is_fp != 0) !== e.pld.rd_is_fp) ||
+        (rs1_data !== e.pld.rs1_data) ||
+        (store_side(e) && (rs2_data !== e.pld.store_data)) ||
+        ((imm_valid != 0) !== e.pld.imm_valid) ||
+        ((imm_valid != 0) && (imm_data != rtl_imm_data)) ||
+        ((is_store != 0) !== plain_store(e))) begin
+      cfg.print_cache(3, $sformatf(
+          "[CACHE][WAIT_MODEL_LSU_META] cycle=%0d tag=%0d model={prop=0x%0h subop=0x%06h f3=0x%0h fp=%0b rs1=0x%016h rs2=0x%016h imm_v=%0b imm=0x%016h store=%0b} rtl={prop=0x%0h subop=0x%06h f3=0x%0h fp=%0b rs1=0x%016h rs2=0x%016h imm_v=%0b imm=0x%016h store=%0b}",
+          cycle_count, e.pld.tag, req_property[6:0], model_exe_subop,
+          mem_funct3[2:0], rd_is_fp != 0, rs1_data, rs2_data, imm_valid != 0,
+          imm_data, is_store != 0, rtl_req_property, rtl_exe_subop,
+          e.pld.mem_funct3, e.pld.rd_is_fp, e.pld.rs1_data, e.pld.store_data,
+          e.pld.imm_valid, rtl_imm_data, plain_store(e)));
+      return 1'b0;
+    end
+
+    return 1'b1;
+  endfunction
+
   // Only the head of the store FIFO may touch memory.  The model store
   // buffer pops from its front without an index, so the caller must be the
   // oldest store-side record or the wrong entry would be drained.
   function automatic bit older_store_pending(cache_pending e);
     if (store_fifo.size() == 0) return 1'b0;
-    return (store_fifo[0] != int'(e.pld.self_tag));
+    return (store_fifo[0] != int'(e.pld.tag));
   endfunction
 
   // Occupancy of the write-side buffer: a store-side record holds a slot from
@@ -244,7 +338,7 @@ class cache_agent;
   endtask
 
   task automatic retire(cache_pending e);
-    int tag = int'(e.pld.self_tag);
+    int tag = int'(e.pld.tag);
     queue_remove(order_fifo, tag);
     queue_remove(store_fifo, tag);
     queue_remove(done_queue, tag);
@@ -259,7 +353,7 @@ class cache_agent;
                                    longint unsigned tval);
     int tag;
     if (e.exception_valid) return;
-    tag = int'(e.pld.self_tag);
+    tag = int'(e.pld.tag);
     e.exception_valid = 1'b1;
     e.exception_cause = lsu_cause_t'(trap);
     e.exception_tval = tval;
@@ -280,7 +374,7 @@ class cache_agent;
                        tag, trap, trap_rc));
     end
     cfg.print_cache(1, $sformatf("[CACHE] exception tag=%0d cause=%0d tval=0x%016h",
-                                 e.pld.self_tag, trap, tval));
+                                 e.pld.tag, trap, tval));
   endtask
 
   // Turn a model refusal into exactly one architectural exception.  The
@@ -323,9 +417,9 @@ class cache_agent;
     delay_cycles = store_side(e) ? cfg.cache_store_done_delay_cycles
                                  : cfg.cache_load_return_delay_cycles;
     e.done_ready_cycle = cycle_count + delay_cycles;
-    done_queue.push_back(int'(e.pld.self_tag));
+    done_queue.push_back(int'(e.pld.tag));
     cfg.print_cache(3, $sformatf("[CACHE][QUEUE] tag=%0d read=%0b store=%0b data=0x%016h ready_cycle=%0d",
-                                 e.pld.self_tag, read_side(e), store_side(e),
+                                 e.pld.tag, read_side(e), store_side(e),
                                  e.result, e.done_ready_cycle));
   endtask
 
@@ -350,7 +444,7 @@ class cache_agent;
       e.store_authorized = 1'b1;
       consumed = 1'b1;
       cfg.print_cache(3, $sformatf("[CACHE][WAKEUP] cycle=%0d tag=%0d authorized",
-                                   cycle_count, e.pld.self_tag));
+                                   cycle_count, e.pld.tag));
       break;
     end
     if (consumed) return;
@@ -364,6 +458,7 @@ class cache_agent;
 
   task automatic accept_issue();
     be_lsu_issue_pld_t pld;
+    lsu_req_property_t prop;
     cache_pending e;
     int tag;
 
@@ -371,20 +466,18 @@ class cache_agent;
     if (vif.lsu_be_issue_ready !== 1'b1) return;
 
     pld = vif.be_lsu_issue_pld;
-    tag = int'(pld.self_tag);
+    prop = issue_property(pld);
+    tag = int'(pld.tag);
 
     if (pending[tag] != null)
-      fail($sformatf("self_tag %0d issued again while its record is still live", tag));
-    if (!req_property_matches_subop(pld.req_property, pld.exe_subop))
-      fail($sformatf("tag=%0d req_property 0x%0h does not match exe_subop 0x%06h",
-                     tag, pld.req_property, pld.exe_subop));
+      fail($sformatf("tag %0d issued again while its record is still live", tag));
+    if (!req_property_is_onehot(prop))
+      fail($sformatf("tag=%0d exe_subop 0x%06h does not map to one request property",
+                     tag, pld.exe_subop));
     if (!mem_funct3_matches_subop(pld.mem_funct3, pld.exe_subop))
       fail($sformatf("tag=%0d mem_funct3 %03b does not match exe_subop 0x%06h",
                      tag, pld.mem_funct3, pld.exe_subop));
-    if (pld.is_store !== pld.req_property.is_store)
-      fail($sformatf("tag=%0d legacy is_store bit %0b disagrees with req_property.is_store %0b",
-                     tag, pld.is_store, pld.req_property.is_store));
-    if (!pld.req_property.is_store && (pld.st_br_resolve === 1'b1))
+    if (!prop.is_store && (pld.st_br_resolve === 1'b1))
       fail($sformatf("tag=%0d carries st_br_resolve but is not a plain store", tag));
 
     e = new(pld, next_order++);
@@ -440,12 +533,13 @@ class cache_agent;
       e = pending[order_fifo[i]];
       if (e == null) continue;
       if (e.executed || e.exception_valid) continue;
-      rc = isa_dpi_execute_insn(MODEL_CORE_ID, dpi_rob_idx(int'(e.pld.self_tag)));
-      cfg.print_cache(3, $sformatf("[CACHE][EXEC] tag=%0d rc=%0d", e.pld.self_tag, rc));
+      if (!shared_model_lsu_payload_ready(e)) continue;
+      rc = isa_dpi_execute_insn(MODEL_CORE_ID, dpi_rob_idx(int'(e.pld.tag)));
+      cfg.print_cache(3, $sformatf("[CACHE][EXEC] tag=%0d rc=%0d", e.pld.tag, rc));
       if (rc == ISA_API_PENDING) continue;
       if (rc != ISA_API_PASS) begin
         cfg.print_cache(1, $sformatf("[CACHE][EXEC_FAIL] tag=%0d rc=%0d subop=0x%06h vaddr=0x%016h",
-                                     e.pld.self_tag, rc, e.pld.exe_subop, e.vaddr));
+                                     e.pld.tag, rc, e.pld.exe_subop, e.vaddr));
         translate_exception(e);
         continue;
       end
@@ -469,10 +563,14 @@ class cache_agent;
 
   task automatic commit_store(cache_pending e);
     int rc;
+    logic [63:0] store_pc;
+    logic [7:0] store_mask;
     if (e.store_commit_done) return;
     if (older_store_pending(e)) return;
+    store_pc = isa_dpi_get_insn_pc(MODEL_CORE_ID, dpi_rob_idx(int'(e.pld.tag)));
+    store_mask = store_byte_mask(e);
     cfg.print_cache(3, $sformatf("[CACHE][STORE_COMMIT] cycle=%0d tag=%0d vaddr=0x%016h data=0x%016h",
-                                 cycle_count, e.pld.self_tag, e.vaddr, e.pld.rs2_data));
+                                 cycle_count, e.pld.tag, e.vaddr, e.pld.store_data));
     rc = isa_dpi_store_commit(MODEL_CORE_ID);
     if (rc != ISA_API_PASS) begin
       // One return code, three different failures: an empty buffer, a head
@@ -494,21 +592,31 @@ class cache_agent;
       // The model prints which of the three failures it was.
       if (older_store_pending(e) || !e.executed || faulted_store_parked(e))
         fail($sformatf("store_commit refused tag=%0d rc=%0d while this request was not the drainable write-side head; this is a testbench ordering fault, not an architectural one -- see the model's storeCommit diagnostic for which failure it was",
-                       e.pld.self_tag, rc));
+                       e.pld.tag, rc));
       translate_exception(e);
       return;
     end
     // Any successful write-side commit drops an outstanding reservation.
     if (isa_dpi_clear_mem_reserve(MODEL_CORE_ID) != ISA_API_PASS)
-      fail($sformatf("clear_mem_reserve after store_commit tag=%0d failed", e.pld.self_tag));
+      fail($sformatf("clear_mem_reserve after store_commit tag=%0d failed", e.pld.tag));
     e.store_commit_done = 1'b1;
+    if (ob_cosim_vif.mem_store_commit_valid === 1'b1)
+      fail("more than one store commit was produced in one cache observation phase");
+    ob_cosim_vif.mem_store_commit_valid = 1'b1;
+    ob_cosim_vif.mem_store_commit_order = e.order;
+    ob_cosim_vif.mem_store_commit_vaddr = e.vaddr;
+    ob_cosim_vif.mem_store_commit_data = e.pld.store_data;
+    ob_cosim_vif.mem_store_commit_mask = store_mask;
+    ob_cosim_vif.mem_store_commit_pc = store_pc;
+    ob_cosim_vif.mem_store_commit_rob_idx = e.pld.tag;
+    ob_cosim_vif.mem_store_commit_terminal = isa_dpi_is_to_exit() != 0;
   endtask
 
   task automatic log_authorization_wait(cache_pending e);
     if (e.authorization_wait_logged) return;
     e.authorization_wait_logged = 1'b1;
     cfg.print_cache(3, $sformatf("[CACHE][WAIT_AUTH] tag=%0d waiting for the store authorization",
-                                 e.pld.self_tag));
+                                 e.pld.tag));
   endtask
 
   task automatic service_memory_ops();
@@ -584,7 +692,7 @@ class cache_agent;
 
       end else begin
         fail($sformatf("tag=%0d has no serviceable class; req_property=0x%0h subop=0x%06h",
-                       tag, e.pld.req_property, e.pld.exe_subop));
+                       tag, issue_property(e.pld), e.pld.exe_subop));
       end
     end
   endtask
@@ -612,9 +720,14 @@ class cache_agent;
     int idx;
 
     vif.lsu_be_done_valid_q <= 1'b0;
+<<<<<<< Updated upstream
     vif.lsu_be_done_pld <= '0;
     vif.lsu_be_exception_valid_q <= 1'b0;
     vif.lsu_be_exception_pld <= '0;
+=======
+    vif.lsu_be_exception_valid_q <= 1'b0;
+    vif.lsu_be_writeback_pld <= '0;
+>>>>>>> Stashed changes
     vif.lsu_be_bypass_valid_q <= 1'b0;
     vif.lsu_be_bypass_pld <= '0;
 
@@ -633,9 +746,18 @@ class cache_agent;
       if (!e.exception_valid || e.exception_sent) continue;
       e.exception_sent = 1'b1;
       vif.lsu_be_exception_valid_q <= 1'b1;
+<<<<<<< Updated upstream
       vif.lsu_be_exception_pld.tag <= e.pld.self_tag;
       vif.lsu_be_exception_pld.cause <= e.exception_cause;
       vif.lsu_be_exception_pld.tval <= e.exception_tval;
+=======
+      vif.lsu_be_writeback_pld.tag <= e.pld.tag;
+      vif.lsu_be_writeback_pld.done_valid <= 1'b0;
+      vif.lsu_be_writeback_pld.data <= '0;
+      vif.lsu_be_writeback_pld.exception_valid <= 1'b1;
+      vif.lsu_be_writeback_pld.exception_cause <= e.exception_cause;
+      vif.lsu_be_writeback_pld.exception_tval <= e.exception_tval;
+>>>>>>> Stashed changes
       terminal_driven = 1'b1;
       terminal_tag = tag;
       cfg.print_cache(2, $sformatf("[CACHE][EXCP_OUT] cycle=%0d tag=%0d cause=%0d tval=0x%016h",
@@ -653,13 +775,26 @@ class cache_agent;
       if (e.done_ready_cycle > cycle_count) continue;
 
       vif.lsu_be_done_valid_q <= 1'b1;
+<<<<<<< Updated upstream
       vif.lsu_be_done_pld.tag <= e.pld.self_tag;
       vif.lsu_be_done_pld.data <= read_side(e) ? e.result : '0;
+=======
+      vif.lsu_be_writeback_pld.tag <= e.pld.tag;
+      vif.lsu_be_writeback_pld.done_valid <= 1'b1;
+      vif.lsu_be_writeback_pld.data <= read_side(e) ? e.result : '0;
+      vif.lsu_be_writeback_pld.exception_valid <= 1'b0;
+      vif.lsu_be_writeback_pld.exception_cause <= '0;
+      vif.lsu_be_writeback_pld.exception_tval <= '0;
+>>>>>>> Stashed changes
       // The broadcast rides this one cycle and is never repeated, so it is
       // only meaningful for a request that produced a register result.
       if (read_side(e)) begin
         vif.lsu_be_bypass_valid_q <= 1'b1;
+<<<<<<< Updated upstream
         vif.lsu_be_bypass_pld.tag <= e.pld.self_tag;
+=======
+        vif.lsu_be_bypass_pld.tag <= e.pld.tag;
+>>>>>>> Stashed changes
         vif.lsu_be_bypass_pld.data <= e.result;
       end
       terminal_driven = 1'b1;
@@ -680,7 +815,13 @@ class cache_agent;
     vif.lsu_store_buffer_full <= 1'b0;
     vif.lsu_be_done_valid_q <= 1'b0;
     vif.lsu_be_exception_valid_q <= 1'b0;
+<<<<<<< Updated upstream
     vif.lsu_be_bypass_valid_q <= 1'b0;
+=======
+    vif.lsu_be_writeback_pld <= '0;
+    vif.lsu_be_bypass_valid_q <= 1'b0;
+    vif.lsu_be_bypass_pld <= '0;
+>>>>>>> Stashed changes
     clear_all_state();
     cycle_count = 0;
     next_be_phase_seq = phase_vif.dpi_be_phase_seq + 1;

@@ -34,6 +34,14 @@ class be_getter;
     vif.commit_rsp_redirect_pc = '0;
   endfunction
 
+  function automatic bit drive_dut_feedback();
+`ifdef ORBE_DUT_RTL_V1
+    return 1'b0;
+`else
+    return 1'b1;
+`endif
+  endfunction
+
   function automatic logic [23:0] canonical_exe_subop(input logic [23:0] raw);
     logic [23:0] canonical;
     canonical = raw;
@@ -80,7 +88,7 @@ class be_getter;
 
     if (lane >= MOCK_ISSUE_NUM)
       cfg.reporter.fatal("[GETTER] decode lane out of range");
-    if (vif.decode_rsp_valid[lane])
+    if (drive_dut_feedback() && vif.decode_rsp_valid[lane])
       cfg.reporter.fatal($sformatf("[GETTER] decode lane %0d response overwritten", lane));
     rc = isa_dpi_get_decode_metadata(MODEL_CORE_ID, model_rob_idx,
                                      is_lsu, trap_valid, trap_cause, trap_tval);
@@ -93,7 +101,17 @@ class be_getter;
     vif.decode_rsp_exception[lane] = trap_valid != 0;
     vif.decode_rsp_cause[lane] = exception_cause_t'(trap_cause[4:0]);
     vif.decode_rsp_tval[lane] = trap_tval;
-    vif.decode_rsp_valid[lane] = 1'b1;
+    if (vif.decode_rsp_exception[lane])
+      cfg.print_be(2, $sformatf(
+          "[GETTER][DECODE_TRAP] group=%0d tag=0x%0h rob=%0d cause=%0d tval=0x%016h rc=%0d",
+          lane, full_tag, model_rob_idx, vif.decode_rsp_cause[lane],
+          vif.decode_rsp_tval[lane], rc));
+    cfg.print_be(3, $sformatf(
+        "[GETTER][DECODE] group=%0d tag=0x%0h rob=%0d lsu=%0b trap=%0b rc=%0d",
+        lane, full_tag, model_rob_idx, getter_is_lsu,
+        vif.decode_rsp_exception[lane], rc));
+    if (drive_dut_feedback())
+      vif.decode_rsp_valid[lane] = 1'b1;
   endtask
 
   task automatic service_lsu_metadata();
@@ -121,7 +139,7 @@ class be_getter;
       cfg.reporter.fatal($sformatf("[GETTER] get_lsu_issue_metadata tag=0x%0h rc=%0d",
                                    tag, rc));
     vif.lsu_meta_rsp_tag = tag;
-    vif.lsu_meta_rsp_pld.req_property = lsu_req_property_t'(req_property[6:0]);
+    vif.lsu_meta_rsp_pld.req_property = mock_lsu_req_property_t'(req_property[6:0]);
     vif.lsu_meta_rsp_pld.exe_subop = canonical_exe_subop(exe_subop[23:0]);
     vif.lsu_meta_rsp_pld.mem_funct3 = mem_funct3[2:0];
     vif.lsu_meta_rsp_pld.rd_is_fp = rd_is_fp != 0;
@@ -130,6 +148,13 @@ class be_getter;
     vif.lsu_meta_rsp_pld.imm_valid = imm_valid != 0;
     vif.lsu_meta_rsp_pld.imm_data = imm_data;
     vif.lsu_meta_rsp_pld.is_store = is_store != 0;
+    cfg.print_be(3, $sformatf(
+        "[GETTER][LSU_META] tag=0x%0h req_property=0x%0h subop=0x%06h funct3=0x%0h rd_is_fp=%0b rs1=0x%016h rs2=0x%016h imm_valid=%0b imm=0x%016h is_store=%0b rc=%0d",
+        tag, vif.lsu_meta_rsp_pld.req_property,
+        vif.lsu_meta_rsp_pld.exe_subop, vif.lsu_meta_rsp_pld.mem_funct3,
+        vif.lsu_meta_rsp_pld.rd_is_fp, vif.lsu_meta_rsp_pld.rs1_data,
+        vif.lsu_meta_rsp_pld.rs2_data, vif.lsu_meta_rsp_pld.imm_valid,
+        vif.lsu_meta_rsp_pld.imm_data, vif.lsu_meta_rsp_pld.is_store, rc));
     vif.lsu_meta_rsp_valid = 1'b1;
     vif.lsu_meta_req_ready = 1'b0;
   endtask
@@ -142,7 +167,7 @@ class be_getter;
     longint unsigned trap_tval;
     int rc;
 
-    if (vif.execute_rsp_valid)
+    if (drive_dut_feedback() && vif.execute_rsp_valid)
       cfg.reporter.fatal("[GETTER] execute response overwritten");
     rc = isa_dpi_get_execute_metadata(MODEL_CORE_ID, model_rob_idx,
                                       trap_valid, trap_cause, trap_tval);
@@ -155,11 +180,21 @@ class be_getter;
     vif.execute_rsp_next_pc = isa_dpi_get_next_pc_of_insn(MODEL_CORE_ID, model_rob_idx);
     vif.execute_rsp_cause = exception_cause_t'(trap_cause[4:0]);
     vif.execute_rsp_tval = trap_tval;
+    if (vif.execute_rsp_redirect)
+      cfg.print_be(2, $sformatf(
+          "[GETTER][REDIRECT] tag=0x%0h rob=%0d next_pc=0x%016h",
+          full_tag, model_rob_idx, vif.execute_rsp_next_pc));
+    if (vif.execute_rsp_exception)
+      cfg.print_be(2, $sformatf(
+          "[GETTER][EXECUTE_TRAP] tag=0x%0h rob=%0d cause=%0d tval=0x%016h rc=%0d",
+          full_tag, model_rob_idx, vif.execute_rsp_cause,
+          vif.execute_rsp_tval, rc));
     cfg.print_be(3, $sformatf(
-        "[GETTER][EXECUTE] tag=0x%0h rob=%0d redirect=%0b next_pc=0x%016h trap=%0b",
+        "[GETTER][EXECUTE] tag=0x%0h rob=%0d redirect=%0b next_pc=0x%016h trap=%0b rc=%0d",
         full_tag, model_rob_idx, vif.execute_rsp_redirect,
-        vif.execute_rsp_next_pc, vif.execute_rsp_exception));
-    vif.execute_rsp_valid = 1'b1;
+        vif.execute_rsp_next_pc, vif.execute_rsp_exception, rc));
+    if (drive_dut_feedback())
+      vif.execute_rsp_valid = 1'b1;
   endtask
 
   task automatic after_commit(
@@ -173,7 +208,7 @@ class be_getter;
     bit late_trap;
     int rc;
 
-    if (vif.commit_rsp_valid)
+    if (drive_dut_feedback() && vif.commit_rsp_valid)
       cfg.reporter.fatal("[GETTER] commit response overwritten");
     rc = isa_dpi_get_commit_auto_trap_info(MODEL_CORE_ID, model_rob_idx,
                                            trap_record_valid, trap_cause, trap_tval);
@@ -188,6 +223,17 @@ class be_getter;
     vif.commit_rsp_tval = trap_tval;
     vif.commit_rsp_redirect_pc = final_trap
         ? isa_dpi_get_spec_pc(MODEL_CORE_ID) : 64'd0;
-    vif.commit_rsp_valid = 1'b1;
+    if (final_trap)
+      cfg.print_be(2, $sformatf(
+          "[GETTER][COMMIT_TRAP] tag=0x%0h rob=%0d precommit_trap=%0b trap_record_valid=%0b late_trap=%0b cause=%0d tval=0x%016h redirect_pc=0x%016h rc=%0d",
+          full_tag, model_rob_idx, precommit_trap, trap_record_valid != 0,
+          late_trap, vif.commit_rsp_cause, vif.commit_rsp_tval,
+          vif.commit_rsp_redirect_pc, rc));
+    cfg.print_be(3, $sformatf(
+        "[GETTER][COMMIT] tag=0x%0h rob=%0d precommit_trap=%0b trap_record_valid=%0b final_trap=%0b rc=%0d",
+        full_tag, model_rob_idx, precommit_trap, trap_record_valid != 0,
+        final_trap, rc));
+    if (drive_dut_feedback())
+      vif.commit_rsp_valid = 1'b1;
   endtask
 endclass
