@@ -303,7 +303,7 @@ Interface 的编号和缩进同样遵循此格式。
 	- 更新时机：`update_condition = expression`；采样或更新时序。
 		- `direct_dependency_a`：语义或 Interface 引用
 		- `direct_dependency_b`：语义或 Interface 引用（如为派生值，继续在下一层写定义式）
-	- Update：`entry.payload[index]^+ = expression`。
+	- Update：`entry.payload[index] <- expression`。
 		- `update_condition`：引用本条“更新时机”中的定义。
 		- `payload_field`：见本条来源 payload 字段。
 		- `entry.payload[index]`：更新前的存储值；无更新条件成立时保持。
