@@ -20,6 +20,9 @@ class be_agent;
   logic [MOCK_ROB_TAG_W-1:0] full_tag_by_rob[longint unsigned];
   longint unsigned pc_by_rob[longint unsigned];
   longint unsigned allocation_order_by_rob[longint unsigned];
+`ifdef ORBE_EXTERNAL_MNEMONICS
+  longint signed inst_type_by_rob[longint unsigned];
+`endif
   longint unsigned next_allocation_order;
 
   bit last_redirect_valid;
@@ -213,6 +216,9 @@ class be_agent;
     full_tag_by_rob.delete();
     pc_by_rob.delete();
     allocation_order_by_rob.delete();
+`ifdef ORBE_EXTERNAL_MNEMONICS
+    inst_type_by_rob.delete();
+`endif
   endtask
 
   // Sample the product-neutral COSIM boundary and hand structured events to
@@ -387,6 +393,17 @@ class be_agent;
       pending_by_rob.delete(rob_idx);
       pc_by_rob[rob_idx] = ob_vif.alloc_pld[group].pc;
       allocation_order_by_rob[rob_idx] = next_allocation_order++;
+`ifdef ORBE_EXTERNAL_MNEMONICS
+      inst_type_by_rob[rob_idx] = isa_dpi_decode_mnemonic(
+          ob_vif.alloc_pld[group].inst_bits,
+          ob_vif.alloc_pld[group].is_compressed);
+      if (inst_type_by_rob[rob_idx] < 0)
+        cfg.reporter.fatal($sformatf(
+            "[BE] external mnemonic decode failed group=%0d rob=%0d pc=0x%016h inst=0x%08h compressed=%0b",
+            group, rob_idx, ob_vif.alloc_pld[group].pc,
+            ob_vif.alloc_pld[group].inst_bits,
+            ob_vif.alloc_pld[group].is_compressed));
+`endif
       cfg.print_be(2, $sformatf(
           "[BE][DECODE] cycle=%0d group=%0d order=%0d tag=0x%0h rob=%0d id=%0d pc=0x%016h inst=0x%08h compressed=%0b lsu=%0b fetch_excp=%0b",
           cycle_count, group, allocation_order_by_rob[rob_idx],
@@ -460,6 +477,9 @@ class be_agent;
   task automatic observe_commits();
     for (int group = 0; group < MOCK_ISSUE_NUM; group++) begin
       longint unsigned rob_idx;
+`ifdef ORBE_EXTERNAL_MNEMONICS
+      longint signed inst_type;
+`endif
       bit precommit_trap;
       bit final_trap;
       int rc;
@@ -468,17 +488,30 @@ class be_agent;
       rob_idx = ob_vif.commit_tag[group];
       if (!allocated_by_rob.exists(rob_idx))
         cfg.reporter.fatal($sformatf("[BE] commit for unallocated rob=%0d", rob_idx));
+`ifdef ORBE_EXTERNAL_MNEMONICS
+      if (!inst_type_by_rob.exists(rob_idx))
+        cfg.reporter.fatal($sformatf("[BE] missing external mnemonic anchor at commit rob=%0d", rob_idx));
+      inst_type = inst_type_by_rob[rob_idx];
+`endif
       precommit_trap = isa_dpi_has_trap(MODEL_CORE_ID, dpi_rob_idx(rob_idx)) != 0;
       rc = isa_dpi_commit_auto(MODEL_CORE_ID, dpi_rob_idx(rob_idx));
       check_rc($sformatf("commitAuto rob=%0d", rob_idx), rc);
       getter.after_commit(full_tag_by_rob[rob_idx], dpi_rob_idx(rob_idx),
                           precommit_trap, final_trap);
       retire_count++;
-      if ((retire_count % retire_print_interval) == 0)
+      if ((retire_count % retire_print_interval) == 0) begin
+`ifdef ORBE_EXTERNAL_MNEMONICS
+        cfg.print_be(2, $sformatf(
+            "[BE][COMMIT] cycle=%0d group=%0d retire=%0d rob=%0d tag=0x%0h pc=0x%016h inst_type=%0d rc=%0d precommit_trap=%0b final_trap=%0b",
+            cycle_count, group, retire_count, rob_idx, full_tag_by_rob[rob_idx],
+            ob_vif.commit_pc[group], inst_type, rc, precommit_trap, final_trap));
+`else
         cfg.print_be(2, $sformatf(
             "[BE][COMMIT] cycle=%0d group=%0d retire=%0d rob=%0d tag=0x%0h pc=0x%016h rc=%0d precommit_trap=%0b final_trap=%0b",
             cycle_count, group, retire_count, rob_idx, full_tag_by_rob[rob_idx],
             ob_vif.commit_pc[group], rc, precommit_trap, final_trap));
+`endif
+      end
       if (final_trap) begin
         trap_commit_consumed = 1'b1;
         clear_local_anchors();
@@ -490,6 +523,9 @@ class be_agent;
         full_tag_by_rob.delete(rob_idx);
         pc_by_rob.delete(rob_idx);
         allocation_order_by_rob.delete(rob_idx);
+`ifdef ORBE_EXTERNAL_MNEMONICS
+        inst_type_by_rob.delete(rob_idx);
+`endif
       end
     end
   endtask

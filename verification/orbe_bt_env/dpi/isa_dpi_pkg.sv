@@ -289,6 +289,14 @@ package isa_dpi_pkg;
     input int unsigned model_core_id,
     input longint unsigned rob_idx
   );
+
+  `ifdef ORBE_EXTERNAL_MNEMONICS
+    import "DPI-C" function longint signed isa_dpi_decode_mnemonic(
+      input int unsigned encoding,
+      input byte unsigned force_rvc
+    );
+  `endif
+
   import "DPI-C" function longint unsigned isa_dpi_get_insn_rd_value(
     input int unsigned model_core_id,
     input longint unsigned rob_idx

@@ -15,7 +15,8 @@ DUT_KIND ?= mock
 SYS_TAG_DIR ?= $(SIM_DIR)/$(SYS)_$(TAG)
 BUILD_ROOT ?= $(SYS_TAG_DIR)/build
 VCS_CACHE_ROOT ?= $(BUILD_ROOT)
-VCS_CACHE_KEY ?= $(SYS)_$(TOP)_dut$(DUT_KIND)_lanes$(LANES)_fcov$(FCOV)_pipeview$(PIPEVIEW)
+MNEMONICS_DECODER ?= 0
+VCS_CACHE_KEY ?= $(SYS)_$(TOP)_dut$(DUT_KIND)_lanes$(LANES)_fcov$(FCOV)_pipeview$(PIPEVIEW)_mnemonics$(MNEMONICS_DECODER)
 RTL_LIB_DIR ?= $(VCS_CACHE_ROOT)/rtl_lib
 TB_BUILD_DIR ?= $(VCS_CACHE_ROOT)/tb_build
 BUILD_DIR ?= $(TB_BUILD_DIR)
@@ -148,6 +149,9 @@ SYS_DEFINES += +define+FCOV_EN
 endif
 ifeq ($(PIPEVIEW),1)
 SYS_DEFINES += +define+PIPEVIEW_EN
+endif
+ifeq ($(MNEMONICS_DECODER),1)
+SYS_DEFINES += +define+ORBE_EXTERNAL_MNEMONICS
 endif
 else
 $(error Unsupported SYS='$(SYS)'; currently only SYS=sys_be_new is defined)
