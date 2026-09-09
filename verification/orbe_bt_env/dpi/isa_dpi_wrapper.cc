@@ -733,6 +733,20 @@ std::uint64_t isa_dpi_get_insn_pc(std::uint32_t model_core_id,
     return sim == nullptr ? 0 : funcMultiCore_getInsnPc(sim, model_core_id, rob_idx);
 }
 
+std::int64_t isa_dpi_decode_mnemonic(std::uint32_t encoding,
+                                     std::uint8_t force_rvc)
+{
+    FuncMultiCore* sim = sim_for();
+    return sim == nullptr ? ISA_API_INVALID_MNEMONIC
+                          : funcMultiCore_decodeMnemonic(sim, 0, encoding,
+                                                          force_rvc != 0);
+}
+
+const char* isa_dpi_mnemonic_name(std::int64_t mnemonic)
+{
+    return decoder_getInsnName(static_cast<std::uint64_t>(mnemonic));
+}
+
 std::uint64_t isa_dpi_get_insn_rd_value(std::uint32_t model_core_id,
                                         std::uint64_t rob_idx)
 {

@@ -720,14 +720,8 @@ class cache_agent #(int unsigned COSIM_ISSUE_NUM,
     int idx;
 
     vif.lsu_be_done_valid_q <= 1'b0;
-<<<<<<< Updated upstream
-    vif.lsu_be_done_pld <= '0;
-    vif.lsu_be_exception_valid_q <= 1'b0;
-    vif.lsu_be_exception_pld <= '0;
-=======
     vif.lsu_be_exception_valid_q <= 1'b0;
     vif.lsu_be_writeback_pld <= '0;
->>>>>>> Stashed changes
     vif.lsu_be_bypass_valid_q <= 1'b0;
     vif.lsu_be_bypass_pld <= '0;
 
@@ -746,18 +740,12 @@ class cache_agent #(int unsigned COSIM_ISSUE_NUM,
       if (!e.exception_valid || e.exception_sent) continue;
       e.exception_sent = 1'b1;
       vif.lsu_be_exception_valid_q <= 1'b1;
-<<<<<<< Updated upstream
-      vif.lsu_be_exception_pld.tag <= e.pld.self_tag;
-      vif.lsu_be_exception_pld.cause <= e.exception_cause;
-      vif.lsu_be_exception_pld.tval <= e.exception_tval;
-=======
       vif.lsu_be_writeback_pld.tag <= e.pld.tag;
       vif.lsu_be_writeback_pld.done_valid <= 1'b0;
       vif.lsu_be_writeback_pld.data <= '0;
       vif.lsu_be_writeback_pld.exception_valid <= 1'b1;
       vif.lsu_be_writeback_pld.exception_cause <= e.exception_cause;
       vif.lsu_be_writeback_pld.exception_tval <= e.exception_tval;
->>>>>>> Stashed changes
       terminal_driven = 1'b1;
       terminal_tag = tag;
       cfg.print_cache(2, $sformatf("[CACHE][EXCP_OUT] cycle=%0d tag=%0d cause=%0d tval=0x%016h",
@@ -775,27 +763,17 @@ class cache_agent #(int unsigned COSIM_ISSUE_NUM,
       if (e.done_ready_cycle > cycle_count) continue;
 
       vif.lsu_be_done_valid_q <= 1'b1;
-<<<<<<< Updated upstream
-      vif.lsu_be_done_pld.tag <= e.pld.self_tag;
-      vif.lsu_be_done_pld.data <= read_side(e) ? e.result : '0;
-=======
       vif.lsu_be_writeback_pld.tag <= e.pld.tag;
       vif.lsu_be_writeback_pld.done_valid <= 1'b1;
       vif.lsu_be_writeback_pld.data <= read_side(e) ? e.result : '0;
       vif.lsu_be_writeback_pld.exception_valid <= 1'b0;
       vif.lsu_be_writeback_pld.exception_cause <= '0;
       vif.lsu_be_writeback_pld.exception_tval <= '0;
->>>>>>> Stashed changes
       // The broadcast rides this one cycle and is never repeated, so it is
       // only meaningful for a request that produced a register result.
       if (read_side(e)) begin
         vif.lsu_be_bypass_valid_q <= 1'b1;
-<<<<<<< Updated upstream
-        vif.lsu_be_bypass_pld.tag <= e.pld.self_tag;
-=======
-        vif.lsu_be_bypass_pld.tag <= e.pld.tag;
->>>>>>> Stashed changes
-        vif.lsu_be_bypass_pld.data <= e.result;
+        vif.lsu_be_bypass_pld.tag <= e.pld.tag;        vif.lsu_be_bypass_pld.data <= e.result;
       end
       terminal_driven = 1'b1;
       terminal_tag = tag;
@@ -815,13 +793,9 @@ class cache_agent #(int unsigned COSIM_ISSUE_NUM,
     vif.lsu_store_buffer_full <= 1'b0;
     vif.lsu_be_done_valid_q <= 1'b0;
     vif.lsu_be_exception_valid_q <= 1'b0;
-<<<<<<< Updated upstream
-    vif.lsu_be_bypass_valid_q <= 1'b0;
-=======
     vif.lsu_be_writeback_pld <= '0;
     vif.lsu_be_bypass_valid_q <= 1'b0;
     vif.lsu_be_bypass_pld <= '0;
->>>>>>> Stashed changes
     clear_all_state();
     cycle_count = 0;
     next_be_phase_seq = phase_vif.dpi_be_phase_seq + 1;

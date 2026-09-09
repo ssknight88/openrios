@@ -297,6 +297,12 @@ package isa_dpi_pkg;
     );
   `endif
 
+  `ifdef ORBE_EXTERNAL_MNEMONICS
+  import "DPI-C" function string isa_dpi_mnemonic_name(
+    input longint signed mnemonic
+  );
+  `endif
+
   import "DPI-C" function longint unsigned isa_dpi_get_insn_rd_value(
     input int unsigned model_core_id,
     input longint unsigned rob_idx

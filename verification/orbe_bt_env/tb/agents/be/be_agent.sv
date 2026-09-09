@@ -479,6 +479,7 @@ class be_agent;
       longint unsigned rob_idx;
 `ifdef ORBE_EXTERNAL_MNEMONICS
       longint signed inst_type;
+      string inst_mnemonic;
 `endif
       bit precommit_trap;
       bit final_trap;
@@ -492,6 +493,7 @@ class be_agent;
       if (!inst_type_by_rob.exists(rob_idx))
         cfg.reporter.fatal($sformatf("[BE] missing external mnemonic anchor at commit rob=%0d", rob_idx));
       inst_type = inst_type_by_rob[rob_idx];
+      inst_mnemonic = isa_dpi_mnemonic_name(inst_type);
 `endif
       precommit_trap = isa_dpi_has_trap(MODEL_CORE_ID, dpi_rob_idx(rob_idx)) != 0;
       rc = isa_dpi_commit_auto(MODEL_CORE_ID, dpi_rob_idx(rob_idx));
@@ -502,9 +504,10 @@ class be_agent;
       if ((retire_count % retire_print_interval) == 0) begin
 `ifdef ORBE_EXTERNAL_MNEMONICS
         cfg.print_be(2, $sformatf(
-            "[BE][COMMIT] cycle=%0d group=%0d retire=%0d rob=%0d tag=0x%0h pc=0x%016h inst_type=%0d rc=%0d precommit_trap=%0b final_trap=%0b",
+            "[BE][COMMIT] cycle=%0d group=%0d retire=%0d rob=%0d tag=0x%0h pc=0x%016h inst_type=%0d inst_mnemonic=%s rc=%0d precommit_trap=%0b final_trap=%0b",
             cycle_count, group, retire_count, rob_idx, full_tag_by_rob[rob_idx],
-            ob_vif.commit_pc[group], inst_type, rc, precommit_trap, final_trap));
+            ob_vif.commit_pc[group], inst_type, inst_mnemonic, rc,
+            precommit_trap, final_trap));
 `else
         cfg.print_be(2, $sformatf(
             "[BE][COMMIT] cycle=%0d group=%0d retire=%0d rob=%0d tag=0x%0h pc=0x%016h rc=%0d precommit_trap=%0b final_trap=%0b",
