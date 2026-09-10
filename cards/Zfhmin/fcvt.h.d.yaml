@@ -1,0 +1,61 @@
+# fcvt.h.d · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/zfh_insts.sail execute(F_UN_RM_FF_TYPE_H … FCVT_H_D)（803f192b）
+# extension 吸收了 Sail encdec 的 when（currentlyEnabled(Ext_F/D/Zfh…)，内含 mstatus[FS] != 0b00）—— 模板注 ⁽¹⁾ 约定，dynamic_check 不再重复
+# encdec when haveHalfMin() = Zfh | Zfhmin | Zhinx*；本轮 Zfhmin
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: fcvt.h.d
+  verified: null
+
+decode:
+  extension: Zfhmin
+  xlen: null
+  mnemonic: fcvt.h.d
+  aliases: []
+  encoding:
+    pattern: "0100010 00001 ..... ... ..... 1010011"
+    fields: {rs1: "15:5", rm: "12:3", rd: "7:5"}
+    assembly: "rd, rs1, rm"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: 
+    - {when: "select_instr_or_fcsr_rm(rm) == None()", params: [rm, fcsr.FRM, param:fcsr_rm_reserved_behavior], raise: Illegal_Instruction}
+
+operand_fetch:
+  operands: 
+    - {type: F, id: rs1}
+    - {type: imm, id: rm}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val_D, width: 64, op: "F_or_X_D(rs1)"}
+  - {out: "rm'", width: null, op: "select_instr_or_fcsr_rm (rm)"}
+  - {out: rm_3b, width: 3, op: "encdec_rounding_mode(rm')"}
+  - {out: fflags, width: 5, op: "riscv_f64ToF16 (rm_3b, rs1_val_D)"}   # 元组，⑱
+  - {out: rd_val_H, width: 16, op: "riscv_f64ToF16 (rm_3b, rs1_val_D)"}
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: F, id: rd, width: 16, value: rd_val_H}
+  csr: 
+    - {csr: fcsr, field: FFLAGS, value: "fcsr[FFLAGS] | fflags"}
+    - {csr: mstatus, field: FS, value: "extStatus_map(Dirty)"}
+    - {csr: mstatus, field: SD, value: "0b1"}
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进④：accrue_fflags 里 FS 置脏按 fflags_dirty_policy 是条件的；update.csr[] 无 when。本指令另有 F 写（wF 无条件置脏），结果等价
+  # 填不进⑤：fflags 是 fcsr[4:0] 的视图；inVirtualPrivilege() 时还写 vsstatus[FS]/[SD]。登记名字待 C 模板

@@ -1,0 +1,60 @@
+# fence.i · 按 card.template.v1.yaml 第三稿；语义抄 Sail Zifencei/zifencei_insts.sail execute(FENCEI)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/Zifencei/zifencei_insts.sail execute(FENCEI) L23–L36
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\Zifencei\fence.i.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文（全文）：
+#   function clause execute FENCEI(_imm, _rs, _rd) = {
+#     sail_barrier(Barrier_RISCV_i);
+#     RETIRE_SUCCESS
+#   }
+# 文件内注释：「fence.i is a nop for the memory model」
+
+template: A1-v1
+
+card:
+  key: fence.i
+  verified: null
+
+decode:
+  extension: Zifencei
+  xlen: null
+  mnemonic: fence.i
+  aliases: []
+  encoding:
+    pattern: "............ ..... 001 ..... 0001111"
+    fields: {imm: "20:12", rs1: "15:5", rd: "7:5"}
+    assembly: ""
+    # imm / rs1 / rd 三个字段 spec 保留给未来细粒度 fence，「base implementations shall ignore these fields,
+    # and standard software shall zero these fields」。Sail encdec 把它们当变量接收（_imm _rs _rd），执行时不用。
+    # 按 编码格式.md 这该用 - 记「忽略位」，但 - 无法命名字段；此处用 . 并在此注明
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: []                          # 三个编码字段不进操作数：执行不用
+  implicit_reads: []
+
+calculate: []
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进②（事件 · 归「序」，B 模板未定）：全部语义是 sail_barrier(Barrier_RISCV_i)——「本 hart 此前的所有存储
+  #   对此后的取指可见」。与 fence · sfence.vma 同一缺口，见 cards/I/fence.yaml 卡尾。
+  #   本卡除 decode 外全空，lint 会过、覆盖矩阵记「显式 N/A ✓」，语义为零

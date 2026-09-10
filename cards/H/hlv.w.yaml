@@ -1,0 +1,66 @@
+# hlv.w · 按 card.template.v1.yaml 第三稿；语义抄 Sail H/hext_insts.sail execute(HLVTYPE)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/H/hext_insts.sail execute(HLVTYPE) L38–L89
+# 方案.md:142 §3.3 点名的「访问上下文」：翻译用的特权级不是 cur_privilege 而是 hstatus[SPVP] 派生的 eff_priv（VS 或 VU），地址还要过 transform_hlsv_address —— 落 memory.context
+# 异常走 hlsv_exception_context(e, va) = make_exception_context(e, va, true, None())：第三参 true 标「来自 HLV/HSV」，影响 htval/htinst 的写法 —— 模板 exceptions[] 无此槽
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: hlv.w
+  verified: null
+
+decode:
+  extension: H
+  xlen: null
+  mnemonic: hlv.w
+  aliases: []
+  encoding:
+    pattern: "0110100 00000 ..... 100 ..... 1110011"
+    fields: {rs1: "15:5", rd: "7:5"}
+    assembly: "rd, (rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}   # UDB access（本地 0a3a1e2）；原卡 {s: always, u: sometimes, vs: never, vu: never}
+  conditions: 
+    - {when: "inVirtualPrivilege()", params: [cur_privilege], raise: Virtual_Instruction}
+    - {when: "cur_privilege == User & hstatus[HU] == 0b0", params: [cur_privilege, hstatus.HU], raise: Illegal_Instruction}
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+  implicit_reads: [cur_privilege, hstatus.SPVP]
+
+calculate: 
+  - {out: access, width: null, op: "Load(Data)"}   # HLVTYPE match op { HLV => Load(Data), … }
+  - {out: eff_priv, width: null, op: "privLevel_bits(zero_extend(hstatus[SPVP]), 0b1)"}
+  - {out: vaddr, width: 64, op: "X(rs1)"}   # ext_data_get_addr(rs1, zeros(), access, width)：无偏移
+
+memory:
+  request:
+    type: R
+    width: 32
+    address: vaddr
+    aq: null
+    rl: null
+    read: {out: result, width: 32}
+    modify: null
+    write: null
+  va_constraint: null
+  context: "eff_priv = privLevel_bits(zero_extend(hstatus[SPVP]), 0b1); vaddr = transform_hlsv_address(vaddr, access, eff_priv)"
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: "extend_value(is_unsigned, result)"}   # is_unsigned = false
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: 
+    - {when: "not(is_aligned_addr(vaddr, width))", cause: [E_Load_Access_Fault, E_Load_Addr_Align], tval: vaddr}   # 子句内显式 plat_misaligned_exception(access, false)；None 时交 PMA
+    - {rule: "memory-attr(R)", cause: [E_Load_Access_Fault, E_Load_Page_Fault], tval: vaddr}   # translateAddr(vaddr, access, eff_priv) / mem_read；注意用 eff_priv 不用 cur_privilege
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进⑨：ext_data_get_addr 的 Ext_DataAddr_Check_Failure 路径

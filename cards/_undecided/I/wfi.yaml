@@ -1,0 +1,69 @@
+# wfi · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(WFI) L691–L708（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(WFI) L691–L707
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）。子句原文（全文）：
+#   function clause execute WFI() =
+#     match cur_privilege {
+#       Machine           => Enter_Wait(WAIT_WFI),
+#       // mstatus[TW] is checked when the wait times out in `run_hart_waiting()`.
+#       Supervisor        => Enter_Wait(WAIT_WFI),
+#       User              => if plat_wfi_available_to_usermode then Enter_Wait(WAIT_WFI) else Illegal_Instruction(),
+#       // VU never waits. Raises virtual immediately when TW=0, illegal when TW=1
+#       VirtualUser       => if mstatus[TW] == 0b1 then Illegal_Instruction() else Virtual_Instruction(),
+#       // VS raises illegal immediately when TW=1; when TW=0, enters wait, VTW checked on timeout in run_hart_waiting()
+#       VirtualSupervisor => if mstatus[TW] == 0b1 then Illegal_Instruction() else Enter_Wait(WAIT_WFI),
+#     }
+# ⚠ 我第一版按 spec 写的四条条件是错的（S 模式的 TW、VS 的 VTW 都不在本子句判，超时时才判），已全部按原文重写
+# UDB 0a3a1e2 已核（本地 _golden，inst\I\wfi.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+
+template: A1-v1
+
+card:
+  key: wfi
+  verified: null
+
+decode:
+  extension: Sm                         # UDB definedBy Sm；xlsx 归 RV64I 桶
+  xlen: null
+  mnemonic: wfi
+  aliases: []
+  encoding:
+    pattern: "0001000 00101 00000 000 00000 1110011"   # 全固定位
+    fields: {}
+    assembly: ""
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: sometimes, u: sometimes, vs: sometimes, vu: sometimes}   # UDB access（本地 0a3a1e2）；原卡 {s: always, u: sometimes, vs: sometimes, vu: never}
+  conditions:                           # 原文 match 臂按 §2.3 第 6 条拆开；列表有序 = 优先级
+    - {when: "cur_privilege == User & not(plat_wfi_available_to_usermode)", params: [cur_privilege, param:plat_wfi_available_to_usermode], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualUser & mstatus[TW] == 0b1", params: [cur_privilege, mstatus.TW], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualUser & mstatus[TW] == 0b0", params: [cur_privilege, mstatus.TW], raise: Virtual_Instruction}
+    - {when: "cur_privilege == VirtualSupervisor & mstatus[TW] == 0b1", params: [cur_privilege, mstatus.TW], raise: Illegal_Instruction}
+      # Machine · Supervisor · VS(TW=0) · User(plat 允许) → Enter_Wait(WAIT_WFI)。
+      # S 模式的 mstatus[TW] 与 VS 模式的 hstatus[VTW] 由 run_hart_waiting() 在**超时时**判，不在本子句 —— 那是「等待态」内部的规则，本卡放不下（⑥）
+
+operand_fetch:
+  operands: []
+  implicit_reads: [cur_privilege]
+
+calculate: []
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq                          # 唤醒后顺序执行下一条
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进⑥（等待态 · 归「序」，B 模板未定）：原文四个分支的返回值是 Enter_Wait(WAIT_WFI) —— 它是 sys/insts_begin.sail L16
+  #   ExecutionResult 联合的第三个构造子（Retire_Success · ExecuteAs · Enter_Wait · Illegal_Instruction · Virtual_Instruction ·
+  #   Trap · Ext_*），模板 retire: normal | never 只投影了其中两个。本卡 retire: normal 是把 Enter_Wait 硬写成 Retire_Success。
+  #   归 方案.md:106 §2.6 同一类缺口

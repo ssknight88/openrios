@@ -1,0 +1,50 @@
+# slli.uw · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zba_insts.sail execute(SLLIUW)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zba_insts.sail execute(SLLIUW) L23–L26
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: slli.uw
+  verified: null
+
+decode:
+  extension: Zba
+  xlen: 64
+  mnemonic: slli.uw
+  aliases: []
+  encoding:
+    pattern: "000010 ...... ..... 001 ..... 0011011"
+    fields: {shamt: "20:6", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, shamt"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: imm, id: shamt}
+  implicit_reads: []
+
+calculate: 
+  - {out: result, width: 64, op: "zero_extend(X(rs1)[31..0]) << shamt"}
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

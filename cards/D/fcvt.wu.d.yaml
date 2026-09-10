@@ -1,0 +1,77 @@
+# fcvt.wu.d · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/dext_insts.sail execute(F_UN_RM_FX_TYPE_D)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/FD/dext_insts.sail execute(F_UN_RM_FX_TYPE_D) L461–L474
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\D\fcvt.wu.d.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   let rs1_val_D = F_or_X_D(rs1);
+#   match (select_instr_or_fcsr_rm (rm)) { None() => Illegal_Instruction(), Some(rm') => {
+#     let rm_3b = encdec_rounding_mode(rm'); let (fflags, rd_val_WU) = riscv_f64ToUi32 (rm_3b, rs1_val_D);
+#     accrue_fflags(fflags); X(rd) = sign_extend (rd_val_WU); RETIRE_SUCCESS } }
+
+template: A1-v1
+
+card:
+  key: fcvt.wu.d
+  verified: null
+
+decode:
+  extension: D
+  # extension 吸收了 Sail encdec 的 when haveSingleFPU()/haveDoubleFPU() = currentlyEnabled(Ext_F/D) | currentlyEnabled(Ext_Zfinx)，
+  # 而 currentlyEnabled(Ext_F) = hartSupports(Ext_F) & misa[F] == 0b1 & currentlyEnabled(Ext_Zicsr) & mstatus[FS] != 0b00 &
+  #   (if inVirtualPrivilege() then vsstatus[FS] != 0b00 else true)
+  # 即「FS = Off → 非法」藏在 extension 这一格里（模板注 ⁽¹⁾ 的约定），本卡 dynamic_check 不再重复。Zfinx 不在本轮范围
+  xlen: null
+  mnemonic: fcvt.wu.d
+  aliases: []
+  encoding:
+    pattern: "1100001 00001 ..... ... ..... 1010011"
+    fields: {rs1: "15:5", rm: "12:3", rd: "7:5"}
+    assembly: "rd, rs1, rm"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: 
+    - {when: "select_instr_or_fcsr_rm(rm) == None()", params: [rm, fcsr.FRM, param:fcsr_rm_reserved_behavior], raise: Illegal_Instruction}
+      # 原文 match (select_instr_or_fcsr_rm (rm)) { None() => Illegal_Instruction(), Some(rm') => {…} }，按 §2.3 第 6 条拆 match 臂。
+      # select_instr_or_fcsr_rm：rm == RM_DYN 时读 fcsr[FRM]，非法值按 fcsr_rm_reserved_behavior 选 Fatal / Illegal；否则 Some(rm)。
+      # 读 fcsr.FRM 是规则参数（§2.4 第一条边界），归 params 不归 implicit_reads；fcsr.FRM 是 C 项
+
+operand_fetch:
+  operands:
+    - {type: F, id: rs1}
+    - {type: imm, id: rm}
+  implicit_reads: []
+
+calculate:
+  - {out: rs1_val_D, width: 64, op: "F_or_X_D(rs1)"}
+  - {out: "rm'", width: null, op: "select_instr_or_fcsr_rm(rm)"}
+  - {out: rm_3b, width: 3, op: "encdec_rounding_mode(rm')"}
+  - {out: fflags, width: 5, op: "riscv_f64ToUi32 (rm_3b, rs1_val_D)"}
+  - {out: rd_val_WU, width: 32, op: "riscv_f64ToUi32 (rm_3b, rs1_val_D)"}
+    # 填不进⑱（元组 let · 归 A 自身）：Sail 一条 let (fflags, rd_val_WU) = riscv_f64ToUi32 (rm_3b, rs1_val_D) 同时绑定两个名字，
+    # 模板 {out, width, op} 一条只绑一个。本卡拆成两条、op 相同；两条合起来才是原话。见 缺口清单.md
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(rd_val_WU)"}   # 无符号结果也按 sign_extend（RV64 W 语义）
+  csr:
+    - {csr: fcsr, field: FFLAGS, value: "fcsr[FFLAGS] | fflags"}          # accrue_fflags：new_fflags = fcsr[FFLAGS] | flags
+    - {csr: mstatus, field: FS, value: "extStatus_map(Dirty)"}            # 仅 accrue_fflags → dirty_fd_context_if_present（条件见下）
+    - {csr: mstatus, field: SD, value: "0b1"}
+      # 填不进④：accrue_fflags 里 FS 置脏是条件的 —— set_dirty 按 fflags_dirty_policy ∈ {Precise: fflags 变了才置 · Flag: flags ≠ 0 才置 · Instruction: 恒置}；
+      #   update.csr[] 无 when，本卡写成无条件（本指令只写 X，不经 wF：FS 是否置脏完全由 policy 决定，本卡无条件写是**不等价**的简化）
+      # 填不进⑤：fflags 是 fcsr 的 [4:0] 视图（read_CSR 0x001 = zero_extend(fcsr[FFLAGS])）；dirty_fd_context 在 inVirtualPrivilege() 时还写 vsstatus[FS] / [SD]；登记哪个名字要 C 模板定
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []                        # 浮点运算不抛异常（结果与 fflags 承载）；Illegal 由 dynamic_check 出
+  precision: null

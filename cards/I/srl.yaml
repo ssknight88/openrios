@@ -1,0 +1,53 @@
+# srl · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(RTYPE) L237–L249（803f192b），op = RISCV_SRL
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(RTYPE) L237–L251
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10），行号见「Sail 定位」行。原推导记录：子句行范围取自同子句样例卡
+#        cards/I/add.yaml；本卡 calculate.op 的表达式与 aliases 按 spec + add.yaml
+#        同构推得，未见 Sail 原话，须逐字核对后去掉本行
+
+template: A1-v1
+
+card:
+  key: srl
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: srl
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: "0000000 ..... ..... 101 ..... 0110011"   # Sail L225 同族 encdec，funct7/funct3 见 spec RV32I R-type 表
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []                           # rd=x0 是 spec HINT 表「designated for future standard use」，UDB 不记，归编码空间一节
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate:
+  - {out: result, width: 64, op: "X(rs1) >> X(rs2)[log2_xlen - 1 .. 0]"}   # Sail L237–L249 内 RISCV_SRL 分支：逻辑右移，RV64 取 rs2 低 6 位；Sail 无 let，直接 X(rd) = …
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal                        # Sail L248 RETIRE_SUCCESS
+  exceptions: []
+  precision: null                       # 不 trap，不适用

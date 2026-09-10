@@ -1,0 +1,52 @@
+# sraiw · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(SHIFTIWOP) L414–L423（803f192b），op = RISCV_SRAIW
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(SHIFTIWOP) L414–L423
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）：SHIFTIWOP 子句 let rs1_val = X(rs1)[31..0]; let result : bits(32) = match op {…}; X(rd) = sign_extend(result)
+
+template: A1-v1
+
+card:
+  key: sraiw
+  verified: null
+
+decode:
+  extension: I
+  xlen: 64                              # RV64-only
+  mnemonic: sraiw
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: "0100000 ..... ..... 101 ..... 0011011"
+    fields: {shamt: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, shamt"
+  overlap: []                           # rd=x0 是 spec HINT 表保留形态
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: shamt}
+  implicit_reads: []
+
+calculate:
+  - {out: rs1_val, width: 32, op: "X(rs1)[31 .. 0]"}
+  - {out: result, width: 32, op: "shift_bits_right_arith(rs1_val, shamt)"}   # RISCV_SRAIW 分支：算术右移，移位量 = shamt（5 位，bit25 固定 0）
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(result)"}   # 32 → 64
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

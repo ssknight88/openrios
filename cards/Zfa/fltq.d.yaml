@@ -1,0 +1,59 @@
+# fltq.d · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/zfa_insts.sail execute(FLTQ_D)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/FD/zfa_insts.sail execute(FLTQ_D) L707–L722
+# extension 吸收了 Sail encdec 的 when（currentlyEnabled(Ext_F/D/Zfh…)，内含 mstatus[FS] != 0b00）—— 模板注 ⁽¹⁾ 约定，dynamic_check 不再重复
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: fltq.d
+  verified: null
+
+decode:
+  extension: Zfa
+  xlen: null
+  mnemonic: fltq.d
+  aliases: []
+  encoding:
+    pattern: "1010001 ..... ..... 101 ..... 1010011"
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: F, id: rs1}
+    - {type: F, id: rs2}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val_D, width: 64, op: "F_D(rs1)"}
+  - {out: rs2_val_D, width: 64, op: "F_D(rs2)"}
+  - {out: fflags, width: 5, op: "riscv_f64Lt_quiet   (rs1_val_D, rs2_val_D)"}   # 元组 (fflags, rd_val)，⑱
+  - {out: rd_val, width: 1, op: "riscv_f64Lt_quiet   (rs1_val_D, rs2_val_D)"}
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: "zero_extend(bool_to_bit(rd_val))"}
+  csr: 
+    - {csr: fcsr, field: FFLAGS, value: "fcsr[FFLAGS] | fflags"}
+    - {csr: mstatus, field: FS, value: "extStatus_map(Dirty)"}
+    - {csr: mstatus, field: SD, value: "0b1"}
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进④：accrue_fflags 里 FS 置脏按 fflags_dirty_policy 是条件的；本指令只写 X，无条件写 FS 是**不等价**的简化
+  # 填不进⑤：同上，登记名字待 C 模板

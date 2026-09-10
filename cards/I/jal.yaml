@@ -1,0 +1,73 @@
+# jal · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(JAL) + jump_to（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(JAL) L75–L83
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）。子句原文：
+#   function clause execute JAL(imm, rd) = {
+#     let link_address = get_next_pc();
+#     match jump_to(PC + sign_extend(imm)) {
+#       Retire_Success() => { X(rd) = link_address; Retire_Success() },
+#       failure => failure,
+#     }
+#   }
+# 行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+
+template: A1-v1
+
+card:
+  key: jal
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: jal
+  aliases:                              # UDB pseudoinstructions（本地 0a3a1e2 已核）
+    - {name: j, when: "imm=0"}
+    - {name: jal, when: "rd=x1"}
+  encoding:
+    pattern: ".................... ..... 1101111"
+    fields: {imm: "31:s1 12:8 20:1 21:10 <<1", rd: "7:5"}   # 记法 %imm_j（编码格式.md）
+    assembly: "rd, imm"
+    # Sail encdec 原话：JAL(imm @ 0b0, rd) <-> imm[19] @ imm[9..0] @ imm[10] @ imm[18..11] @ encdec_reg(rd) @ 0b1101111
+    # imm @ 0b0 = 最低位恒 0，与 %imm_j 的 <<1 对应
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: imm, id: imm}
+  implicit_reads: [PC]                  # 目标地址与返回地址都由 PC 派生
+
+calculate:
+  - {out: link_address, width: 64, op: "get_next_pc()"}     # Sail let 名 = link_address（方案.md:74 §2.3 第 2 条）
+  - {out: target, width: 64, op: "PC + sign_extend(imm)"}   # Sail 无 let：这是 jump_to 的实参；out 名借 jump_to 形参名 target
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: link_address}   # Sail：X(rd) = link_address，写在 Retire_Success() 分支内
+  csr: []
+  next_pc: target                       # Sail：jump_to 内 set_next_pc(target)
+
+outcome:
+  retire: normal
+  exceptions:
+    - {when: "bit_to_bool(target[1]) & not(currentlyEnabled(Ext_Zca))", cause: E_Fetch_Addr_Align, tval: target}
+      # jump_to 原话：
+      #   if bit_to_bool(target[1]) & not(currentlyEnabled(Ext_Zca))
+      #   then return trap(exception_context(E_Fetch_Addr_Align(), target));
+      # assert(target[0] == 0b0) 按 方案.md:77 §2.3 第 5 条「类型 / 断言」剥掉
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # ①（次序）已关 2026-09-10：X(rd) = link_address 嵌在 Retire_Success() 分支内这层关系，按 方案 §2.1
+  #   「任一 exception 成立 ⇒ update 全部不发生」是全局不变量，卡上不表达；七步之间无执行顺序。见 缺口清单.md ①
+  # 填不进⑨（扩展检查的 cause · 归 A 自身）：jump_to 第一句
+  #   match ext_control_check_pc(target) { Some(e) => return Ext_ControlAddr_Check_Failure(e), None() => () }
+  #   是与对齐并列的第二条异常路径，本卡未写。outcome.exceptions[].cause 要求写 Sail ExceptionType 名，
+  #   而这条的 cause 由扩展（Zicfilp / CFI）给出，写不出具体名字。见 缺口清单.md

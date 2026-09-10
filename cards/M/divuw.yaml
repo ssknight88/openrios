@@ -1,0 +1,70 @@
+# divuw · 按 card.template.v1.yaml 第三稿；语义抄 Sail M/mext_insts.sail execute(DIVW)（803f192b），is_unsigned = true
+# Sail 定位（本地 803f192b 核对）：extensions/M/mext_insts.sail execute(DIVW) L120–L131
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\M\divuw.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   function clause execute DIVW(rs2, rs1, rd, is_unsigned) = {
+#     let rs1_bits = X(rs1)[31..0];
+#     let rs2_bits = X(rs2)[31..0];
+#     let rs1_int = if is_unsigned then unsigned(rs1_bits) else signed(rs1_bits);
+#     let rs2_int = if is_unsigned then unsigned(rs2_bits) else signed(rs2_bits);
+#     let quotient = if rs2_int == 0 then -1 else quot_round_zero(rs1_int, rs2_int);
+#     let quotient = if not(is_unsigned) & quotient >= 2 ^ 31 then negate(2 ^ 31) else quotient;
+#     X(rd) = sign_extend(to_bits_truncate(32, quotient));
+#     RETIRE_SUCCESS
+#   }
+# encdec when：xlen == 64 & currentlyEnabled(Ext_M)
+
+template: A1-v1
+
+card:
+  key: divuw
+  verified: null
+
+decode:
+  extension: M
+  xlen: 64                              # RV64-only
+  mnemonic: divuw
+  aliases: []
+  encoding:
+    pattern: "0000001 ..... ..... 101 ..... 0111011"   # 101 = 0b10 @ bool_bit(is_unsigned)
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate:
+  - {out: rs1_bits, width: 32, op: "X(rs1)[31..0]"}
+  - {out: rs2_bits, width: 32, op: "X(rs2)[31..0]"}
+  - {out: rs1_int, width: null, op: "if is_unsigned then unsigned(rs1_bits) else signed(rs1_bits)"}   # is_unsigned = true（译码常量）
+  - {out: rs2_int, width: null, op: "if is_unsigned then unsigned(rs2_bits) else signed(rs2_bits)"}
+  - {out: quotient, width: null, op: "if rs2_int == 0 then -1 else quot_round_zero(rs1_int, rs2_int)"}
+  - {out: quotient, width: null, op: "if not(is_unsigned) & quotient >= 2 ^ 31 then negate(2 ^ 31) else quotient"}
+    # 填不进⑬（let 同名重绑定）：同 div，见 cards/M/div.yaml
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(to_bits_truncate(32, quotient))"}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []                        # 除零 · 溢出不抛异常，spec 定义了结果值
+  precision: null

@@ -1,0 +1,94 @@
+# sret · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(SRET) L609–L671（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(SRET) L609–L670
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）。子句原文（去 log / callback）：
+#   let sret_illegal : bool = match cur_privilege {
+#     User => true, Supervisor => not(currentlyEnabled(Ext_S)) | mstatus[TSR] == 0b1, Machine => not(currentlyEnabled(Ext_S)),
+#     VirtualUser => false, VirtualSupervisor => false };
+#   let sret_virtual : bool = match cur_privilege { VirtualUser => true, VirtualSupervisor => hstatus[VTSR] == 0b1, _ => false };
+#   if sret_illegal then Illegal_Instruction()
+#   else if sret_virtual then Virtual_Instruction()
+#   else if not(ext_check_xret_priv(Supervisor)) then Ext_XRET_Priv_Failure()
+#   else {
+#     let prev_priv = cur_privilege;
+#     let ret =
+#       if inVirtualPrivilege() then {                       // SRET in VS-Mode
+#         let new_priv = if vsstatus[SPP] == 0b1 then VirtualSupervisor else VirtualUser;
+#         vsstatus[SPP] = 0b0; vsstatus[SIE] = vsstatus[SPIE]; vsstatus[SPIE] = 0b1;
+#         cur_privilege = new_priv; VirtualSupervisor
+#       } else {                                             // SRET in HS-mode or M-mode
+#         let new_priv = privLevel_bits((0b0 @ mstatus[SPP], hstatus[SPV] & bool_to_bit(currentlyEnabled(Ext_H))));
+#         hstatus[SPV] = 0b0; mstatus[SPP] = 0b0; mstatus[SIE] = mstatus[SPIE]; mstatus[SPIE] = 0b1;
+#         if new_priv != Machine then mstatus[MPRV] = 0b0;
+#         cur_privilege = new_priv; Supervisor
+#       };
+#     if hartSupports(Ext_Zicfilp) then zicfilp_restore_elp_on_xret(sRET, prev_priv, cur_privilege);
+#     set_next_pc(prepare_xret_target(ret));
+#     RETIRE_SUCCESS }
+# ⚠ 我第一版的条件漏了 not(currentlyEnabled(Ext_S)) 两项，写回全走 mstatus；原文 VS 模式整条路径写 vsstatus —— ⑤ 的实锤。已按原文重写
+# UDB 0a3a1e2 已核（本地 _golden，inst\S\sret.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+
+template: A1-v1
+
+card:
+  key: sret
+  verified: null
+
+decode:
+  extension: S                          # UDB 目录 S；xlsx 归 RV64I 桶
+  xlen: null
+  mnemonic: sret
+  aliases: []
+  encoding:
+    pattern: "0001000 00010 00000 000 00000 1110011"   # 全固定位
+    fields: {}
+    assembly: ""
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: sometimes, u: never, vs: sometimes, vu: never}
+  conditions:                           # 原文两个 let bool 各是一条；列表有序 = 优先级（illegal 先于 virtual）
+    - {when: "match cur_privilege { User => true, Supervisor => not(currentlyEnabled(Ext_S)) | mstatus[TSR] == 0b1, Machine => not(currentlyEnabled(Ext_S)), VirtualUser => false, VirtualSupervisor => false }", params: [cur_privilege, mstatus.TSR], raise: Illegal_Instruction}
+      # 原文 let sret_illegal；let 名在 conditions 里没有落点（conditions 无 out）
+    - {when: "match cur_privilege { VirtualUser => true, VirtualSupervisor => hstatus[VTSR] == 0b1, _ => false }", params: [cur_privilege, hstatus.VTSR], raise: Virtual_Instruction}
+      # 原文 let sret_virtual
+    # 填不进⑨：not(ext_check_xret_priv(Supervisor)) → Ext_XRET_Priv_Failure()
+
+operand_fetch:
+  operands: []
+  implicit_reads: [cur_privilege, vsstatus.SPP, vsstatus.SPIE, mstatus.SPP, mstatus.SPIE, hstatus.SPV]
+    # 两条路径各读一套；哪套生效由 inVirtualPrivilege() 定 —— 这是「视图随特权级切换」（⑤）
+
+calculate:
+  - {out: prev_priv, width: null, op: "cur_privilege"}
+  - {out: new_priv, width: null, op: "if inVirtualPrivilege() then (if vsstatus[SPP] == 0b1 then VirtualSupervisor else VirtualUser) else privLevel_bits((0b0 @ mstatus[SPP], hstatus[SPV] & bool_to_bit(currentlyEnabled(Ext_H))))"}
+    # 原文两个分支各一个 let new_priv，本卡按 §2.3 第 6 条把外层 if 合进值表达式
+  - {out: ret, width: null, op: "if inVirtualPrivilege() then VirtualSupervisor else Supervisor"}   # 原文 let ret 的值 = 各分支末尾的枚举
+  - {out: cur_privilege, width: null, op: "new_priv"}   # 原文赋值 cur_privilege = new_priv；借 calculate 记（③，同 mret）
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr:                                  # 两组互斥：inVirtualPrivilege() 为真走 vsstatus 组，否则走 mstatus/hstatus 组（④ 无 when 槽）
+    - {csr: vsstatus, field: SPP, value: "0b0"}
+    - {csr: vsstatus, field: SIE, value: "vsstatus[SPIE]"}
+    - {csr: vsstatus, field: SPIE, value: "0b1"}
+    - {csr: hstatus, field: SPV, value: "0b0"}
+    - {csr: mstatus, field: SPP, value: "0b0"}
+    - {csr: mstatus, field: SIE, value: "mstatus[SPIE]"}
+    - {csr: mstatus, field: SPIE, value: "0b1"}
+    - {csr: mstatus, field: MPRV, value: "0b0"}   # 原文 if new_priv != Machine（HS 路径内）；④
+  next_pc: "prepare_xret_target(ret)"
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进③（特权级切换）：同 mret
+  # 填不进④（条件写）：八条 csr 写没有一条是无条件的 —— 前三条只在 VS 模式、后五条只在 HS/M 模式、最后一条再加 new_priv != Machine
+  # 填不进⑤（CSR 视图）：同一条指令按当前特权级写 vsstatus 或 mstatus，两者是同一块状态的两个视图；卡上只能两组都列，靠注释说互斥
+  # 落槽表待裁决：zicfilp_restore_elp_on_xret · long_csr_write_callback · csr_write_callback · xret_callback · print_log

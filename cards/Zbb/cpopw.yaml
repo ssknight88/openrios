@@ -1,0 +1,49 @@
+# cpopw · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zbb_insts.sail execute(CPOPW)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zbb_insts.sail execute(CPOPW) L273–L276
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: cpopw
+  verified: null
+
+decode:
+  extension: Zbb
+  xlen: 64
+  mnemonic: cpopw
+  aliases: []
+  encoding:
+    pattern: "0110000 00010 ..... 001 ..... 0011011"
+    fields: {rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+  implicit_reads: []
+
+calculate: 
+  - {out: result, width: 64, op: "to_bits(count_ones(X(rs1)[31 .. 0]))"}   # Sail 无 let；结果 xlenbits
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

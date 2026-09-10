@@ -1,0 +1,50 @@
+# sext.h · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zbb_insts.sail execute(ZBB_EXTOP)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zbb_insts.sail execute(ZBB_EXTOP) L193–L202
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: sext.h
+  verified: null
+
+decode:
+  extension: Zbb
+  xlen: null
+  mnemonic: sext.h
+  aliases: []
+  encoding:
+    pattern: "0110000 00101 ..... 001 ..... 0010011"
+    fields: {rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: result, width: 64, op: "sign_extend(rs1_val[15..0])"}   # ZBB_EXTOP SEXTH 分支
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

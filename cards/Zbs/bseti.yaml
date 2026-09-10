@@ -1,0 +1,53 @@
+# bseti · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zbs_insts.sail execute(ZBS_IOP)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zbs_insts.sail execute(ZBS_IOP) L45–L58
+# 填不进⑦：RV32 下 shamt 5 位（bit25 固定 0），编码按 RV64 实例化
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: bseti
+  verified: null
+
+decode:
+  extension: Zbs
+  xlen: null
+  mnemonic: bseti
+  aliases: []
+  encoding:
+    pattern: "001010 ...... ..... 001 ..... 0010011"
+    fields: {shamt: "20:6", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, shamt"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: imm, id: shamt}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: mask, width: 64, op: "if xlen == 32 then zero_extend(0b1) << shamt[4..0] else zero_extend(0b1) << shamt"}   # 值 if 原样抄；RV64 走 else
+  - {out: result, width: 64, op: "rs1_val | mask"}   # ZBS_IOP BSETI 分支
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

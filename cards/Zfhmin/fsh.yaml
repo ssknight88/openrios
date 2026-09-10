@@ -1,0 +1,61 @@
+# fsh · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/fext_insts.sail execute(STORE_FP（width = 2）)（803f192b）
+# extension 吸收了 Sail encdec 的 when（currentlyEnabled(Ext_F/D/Zfh…)，内含 mstatus[FS] != 0b00）—— 模板注 ⁽¹⁾ 约定，dynamic_check 不再重复
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: fsh
+  verified: null
+
+decode:
+  extension: Zfhmin
+  xlen: null
+  mnemonic: fsh
+  aliases: []
+  encoding:
+    pattern: "....... ..... ..... 001 ..... 0100111"
+    fields: {imm: "25:s7 7:5", rs2: "20:5", rs1: "15:5"}
+    assembly: "rs2, imm(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: F, id: rs2}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate: 
+  - {out: offset, width: 64, op: "sign_extend(imm)"}
+  - {out: vaddr, width: 64, op: "X(rs1) + offset"}
+  - {out: data, width: 16, op: "F(rs2)[15..0]"}   # 直接读 F 低 16 位，不经 NaN-box 检查
+
+memory:
+  request:
+    type: W
+    width: 16
+    address: vaddr
+    aq: null
+    rl: null
+    read: null
+    modify: null
+    write: {out: data, width: 16}
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: 
+    - {rule: "memory-attr(W)", cause: [E_SAMO_Addr_Align, E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr}
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS

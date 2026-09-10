@@ -1,0 +1,53 @@
+# addi · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(ITYPE) L158–L169（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(ITYPE) L158–L169
+
+template: A1-v1
+
+card:
+  key: addi
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: addi
+  aliases:                              # UDB pseudoinstructions
+    - {name: nop, when: "rd=x0, rs1=x0, imm=0"}
+    - {name: mv, when: "imm=0"}
+  encoding:
+    pattern: "............ ..... 000 ..... 0010011"
+    fields: {imm: "20:s12", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, imm"
+  overlap: []                           # rd=x0（非 nop）是 spec HINT 表保留形态，UDB 无 hints，归编码空间一节
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate:
+  - {out: immext, width: 64, op: "sign_extend(imm)"}   # Sail L159：12 → 64 符号扩展
+  - {out: result, width: 64, op: "X(rs1) + immext"}    # Sail L161：模加，进位丢弃
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: result}      # Sail L160
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

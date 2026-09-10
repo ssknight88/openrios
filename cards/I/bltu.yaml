@@ -1,0 +1,60 @@
+# bltu · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(BTYPE) L116–L128 + jump_to L49–L66（803f192b），op = BLTU
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(BTYPE) L116–L128
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）：calculate.taken 与 Sail BTYPE 子句的
+#        BLTU 分支逐字一致 —— `BLTU => X(rs1) <_u X(rs2)`
+# 行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+
+template: A1-v1
+
+card:
+  key: bltu
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: bltu
+  aliases:                              # UDB pseudoinstructions（本地 0a3a1e2）
+    - {name: bgtu, when: "always"}
+  encoding:
+    pattern: "....... ..... ..... 110 ..... 1100011"   # Sail L112–L113 同族
+    fields: {imm: "31:s1 7:1 25:6 8:4 <<1", rs2: "20:5", rs1: "15:5"}   # UDB location 31|7|30-25|11-8, left_shift 1
+    assembly: "rs1, rs2, imm"
+  overlap: []
+  reserved: []                          # 族级 funct3=010/011 无定义，归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+    - {type: imm, id: imm}
+  implicit_reads: [PC]                  # Sail L126
+
+calculate:
+  - {out: taken, width: 1, op: "X(rs1) <_u X(rs2)"}         # L116–L128 内 BLTU 分支：无符号小于则跳；bool
+  - {out: target, width: 64, op: "PC + sign_extend(imm)"}  # Sail L126：jump_to 的实参；imm 最低位恒 0（encdec imm @ 0b0）
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: {when: taken, target: target}   # Sail L125–L127：taken → jump_to(target) → set_next_pc（L65）；否则 seq
+
+outcome:
+  retire: normal
+  exceptions:
+    - {when: "taken & bit_to_bool(target[1]) & not(currentlyEnabled(Ext_Zca))", cause: E_Fetch_Addr_Align, tval: target}
+      # jump_to L62–L63 原话：
+      #   if bit_to_bool(target[1]) & not(currentlyEnabled(Ext_Zca))
+      #   then return trap(exception_context(E_Fetch_Addr_Align(), target));
+      # 前缀的 "taken &" 不是 Sail 原话：Sail 里 taken 是 BTYPE 子句的外层 if，jump_to 只在 taken
+      # 时被调用。按 方案 §2.3 第 6 条（2026-09-10）：内层条件用 & 粘外层守卫，两段各保持原话
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS

@@ -1,0 +1,78 @@
+# lr.d · 按 card.template.v1.yaml 第三稿；语义抄 Sail A/zalrsc_insts.sail execute(LOADRES)（803f192b），width = 8
+# Sail 定位（本地 803f192b 核对）：extensions/A/zalrsc_insts.sail execute(LOADRES) L41–L52
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\Zalrsc\lr.d.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   function clause execute LOADRES(aq, rl, rs1, width, rd) = {
+#     assert(width <= xlen_bytes);
+#     match vmem_read(rs1, zeros(), width, LoadReserved(aq, rl, Data), aq, aq & rl, true) {
+#       Ok(data) => { X(rd) = sign_extend(data); RETIRE_SUCCESS },
+#       Err(e) => e,
+#     }
+#   }
+# encdec when：currentlyEnabled(Ext_Zalrsc) & lrsc_width_valid(width)
+
+template: A1-v1
+
+card:
+  key: lr.d
+  verified: null
+
+decode:
+  extension: Zalrsc
+  xlen: 64                              # RV64-only
+  mnemonic: lr.d
+  aliases: []
+  encoding:
+    pattern: "00010 . . 00000 ..... 011 ..... 0101111"   # rs2 位固定 00000
+    fields: {aq: "26:1", rl: "25:1", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, (rs1)"
+  overlap: []
+  reserved: []                          # rs2≠00000 属族级空间，归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+  implicit_reads: []
+
+calculate:
+  - {out: vaddr, width: 64, op: "X(rs1)"}   # vmem_read(rs1, zeros(), …)，无偏移
+
+memory:
+  request:
+    type: LR
+    width: 64
+    address: vaddr
+    aq: aq
+    rl: rl
+    read: {out: data, width: 64}         # Sail Ok(data)；访问类型 LoadReserved(aq, rl, Data)
+    modify: null
+    write: null
+  va_constraint: "is_aligned_addr(vaddr, 8)"
+    # 位置已核：LOADRES 子句本身不调 is_aligned_addr；检查在 sys/vmem_utils.sail vmem_read_addr L124
+    #   if not(is_aligned_addr(vaddr, width)) then match plat_misaligned_exception(access, res) …
+    #   res = true（vmem_read 末参）→ plat_misaligned_exception L35 走 plat_misaligned_access.lrsc。
+    #   按 方案 §2.4 第二条边界「指令定义要求的对齐 → 进卡」填；misaligned 处置策略归内存属性
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(data)"}   # width 64 时恒等
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions:
+    - {rule: "memory-attr(LR)", cause: [E_Load_Addr_Align, E_Load_Access_Fault, E_Load_Page_Fault], tval: vaddr}
+      # LR 是 load 家族；对齐处置 · 翻译 · PMA / PMP 全在内存属性
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进⑩（保留集 · 归 C 或「序」，未定）：vmem_read 的第 4 参 LoadReserved(aq, rl, Data) 与末参 true 在内存
+  #   子系统里登记「保留集」。保留集是架构状态——既非通用寄存器、非 CSR、非 PC（与 ③ cur_privilege 同形），
+  #   本卡只能靠 memory.request.type: LR 暗示它，没有槽写「建立了对 vaddr 的保留」。sc 卡的 cancel_reservation() 同此。
+  #   方案.md:135 §3.3 点名 lr.w · sc.w 要逼的「reservation」就是它。见 缺口清单.md

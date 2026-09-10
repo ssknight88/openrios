@@ -1,0 +1,61 @@
+# fmaxm.s · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/zfa_insts.sail execute(FMAXM_S)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/FD/zfa_insts.sail execute(FMAXM_S) L267–L285
+# extension 吸收了 Sail encdec 的 when（currentlyEnabled(Ext_F/D/Zfh…)，内含 mstatus[FS] != 0b00）—— 模板注 ⁽¹⁾ 约定，dynamic_check 不再重复
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: fmaxm.s
+  verified: null
+
+decode:
+  extension: Zfa
+  xlen: null
+  mnemonic: fmaxm.s
+  aliases: []
+  encoding:
+    pattern: "0010100 ..... ..... 011 ..... 1010011"
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: F, id: rs1}
+    - {type: F, id: rs2}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val_S, width: 32, op: "F_S(rs1)"}
+  - {out: rs2_val_S, width: 32, op: "F_S(rs2)"}
+  - {out: is_quiet, width: 1, op: "true"}
+  - {out: rs2_lt_rs1, width: 1, op: "fle_S (rs2_val_S, rs1_val_S, is_quiet)"}   # 元组 (rs2_lt_rs1, fflags)，⑱
+  - {out: fflags, width: 5, op: "fle_S (rs2_val_S, rs1_val_S, is_quiet)"}
+  - {out: rd_val_S, width: 32, op: "if (f_is_NaN_S(rs1_val_S) | f_is_NaN_S(rs2_val_S)) then canonical_NaN_S() else if (f_is_neg_zero_S(rs1_val_S) & f_is_pos_zero_S(rs2_val_S)) then rs2_val_S else if (f_is_neg_zero_S(rs2_val_S) & f_is_pos_zero_S(rs1_val_S)) then rs1_val_S else if rs2_lt_rs1 then rs1_val_S else rs2_val_S"}   # 值 if-链原样抄；与 fmin/fmax 的差别：任一 NaN 即 canonical_NaN（IEEE 754-2019 minimum/maximum）
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: F, id: rd, width: 32, value: rd_val_S}
+  csr: 
+    - {csr: fcsr, field: FFLAGS, value: "fcsr[FFLAGS] | fflags"}
+    - {csr: mstatus, field: FS, value: "extStatus_map(Dirty)"}
+    - {csr: mstatus, field: SD, value: "0b1"}
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进④：accrue_fflags 里 FS 置脏按 fflags_dirty_policy 是条件的；update.csr[] 无 when。本指令另有 F 写（wF 无条件置脏），结果等价
+  # 填不进⑤：fflags 是 fcsr[4:0] 的视图；inVirtualPrivilege() 时还写 vsstatus[FS]/[SD]。登记名字待 C 模板

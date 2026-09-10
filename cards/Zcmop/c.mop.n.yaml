@@ -1,0 +1,52 @@
+# c.mop.n · 按 card.template.v1.yaml 第三稿；语义抄 Sail — execute(—（无 Sail）)（803f192b）
+# ⚠ 无 Sail：803f192b 未实现 Zimop / Zcmop（指令清单.md:8 已登记）。语义抄 UDB operation()，卡头标「无 Sail」，落槽表无从做
+# xlsx 一行 = 一族（N 是编码字段），按「一行一张」写一张；UDB 是每个 N 一个文件（mop.r.0 … mop.r.31）
+# n = 2 * field + 1（只有奇数 1,3,…,15），field = bits10–8，由 UDB c.mop.{1,3,5,9,15} 的 match 推得；占 c.lui x1/x3/…/x15, 0 的保留编码
+# 填不进⑯：16 位编码记法
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: c.mop.n
+  verified: null
+
+decode:
+  extension: Zcmop
+  xlen: null
+  mnemonic: c.mop.n
+  aliases: []
+  encoding:
+    pattern: "011 0 0 ... 1 00000 01"
+    fields: {n: "8:3"}
+    assembly: ""
+  overlap: 
+    - {when: "always", is: inst, of: c.lui}   # c.lui rd=x(2k+1), imm=0 的保留编码点
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: imm, id: n}
+  implicit_reads: []
+
+calculate: []
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # UDB operation(): 空（「defined to not write any register」）；hints 指向 Zicfiss 的 c.sspush，不在范围

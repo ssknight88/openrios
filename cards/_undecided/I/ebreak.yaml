@@ -1,0 +1,48 @@
+# ebreak · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(EBREAK) L680–L681（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(EBREAK) L680–L681
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）。子句原文（全文）：
+#   function clause execute EBREAK() = trap(exception_context(E_Breakpoint(Brk_Software), PC))
+
+template: A1-v1
+
+card:
+  key: ebreak
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: ebreak
+  aliases: []
+  encoding:
+    pattern: "000000000001 00000 000 00000 1110011"   # 全固定位，与 ecall 只差 imm bit20
+    fields: {}
+    assembly: ""
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: []
+  implicit_reads: [PC]                  # tval 用 PC，见 outcome
+
+calculate: []                           # 无中间值：cause 恒为 E_Breakpoint，不像 ecall 要按特权级选
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: null                         # 不 retire，next PC 由异常处理流程接管
+
+outcome:
+  retire: never                         # 与 ecall 同：不视为 retire、不计 minstret
+  exceptions:
+    - {when: always, cause: "E_Breakpoint(Brk_Software)", tval: PC}   # 原文 exception_context(E_Breakpoint(Brk_Software), PC)；cause 带 Brk_Software 参数
+  precision: precise                    # 与 ecall 同，UDB 走 raise_precise

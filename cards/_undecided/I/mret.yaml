@@ -1,0 +1,76 @@
+# mret · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(MRET) L568–L600（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(MRET) L568–L599
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）。子句原文（去 log / callback）：
+#   if cur_privilege != Machine then Illegal_Instruction()
+#   else if not(ext_check_xret_priv(Machine)) then Ext_XRET_Priv_Failure()
+#   else {
+#     let prev_priv = cur_privilege;
+#     mstatus[MIE]  = mstatus[MPIE];
+#     mstatus[MPIE] = 0b1;
+#     cur_privilege = privLevel_bits((mstatus[MPP], if mstatus[MPP] == 0b11 then 0b0 else mstatus[MPV]));
+#     mstatus[MPP]  = privLevel_to_bits(if currentlyEnabled(Ext_U) then User else Machine);
+#     mstatus[MPV]  = 0b0;
+#     if cur_privilege != Machine then mstatus[MPRV] = 0b0;
+#     if hartSupports(Ext_Zicfilp) then zicfilp_restore_elp_on_xret(mRET, prev_priv, cur_privilege);
+#     set_next_pc(prepare_xret_target(Machine));
+#     RETIRE_SUCCESS }
+# ⚠ 我第一版把 prev_priv 写成了「返回目标」，MPP 落值写成 lowest_supported_privLevel()，都错；已按原文重写
+# UDB 0a3a1e2 已核（本地 _golden，inst\I\mret.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+
+template: A1-v1
+
+card:
+  key: mret
+  verified: null
+
+decode:
+  extension: Sm                         # UDB definedBy Sm；xlsx 归 RV64I 桶
+  xlen: null
+  mnemonic: mret
+  aliases: []
+  encoding:
+    pattern: "0011000 00010 00000 000 00000 1110011"   # 全固定位
+    fields: {}
+    assembly: ""
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: never, u: never, vs: never, vu: never}   # 仅 M 模式合法
+  conditions:
+    - {when: "cur_privilege != Machine", params: [cur_privilege], raise: Illegal_Instruction}
+    # 填不进⑨：not(ext_check_xret_priv(Machine)) → Ext_XRET_Priv_Failure()，raise 枚举装不下（core/ext_regs.sail 默认恒 true）
+
+operand_fetch:
+  operands: []
+  implicit_reads: [cur_privilege, mstatus.MPP, mstatus.MPV, mstatus.MPIE]
+
+calculate:
+  - {out: prev_priv, width: null, op: "cur_privilege"}   # Sail let prev_priv = cur_privilege（旧特权级，仅供 zicfilp / log）
+  - {out: cur_privilege, width: null, op: "privLevel_bits((mstatus[MPP], if mstatus[MPP] == 0b11 then 0b0 else mstatus[MPV]))"}
+    # 原文是对状态 cur_privilege 的**赋值**，不是 let。它本该在 update，但 update 无此槽（③），只能借 calculate 记下值；
+    # 读的是写 MPP 之前的旧 MPP（原文顺序：先算 cur_privilege 再改 MPP）
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr:
+    - {csr: mstatus, field: MIE, value: "mstatus[MPIE]"}
+    - {csr: mstatus, field: MPIE, value: "0b1"}
+    - {csr: mstatus, field: MPP, value: "privLevel_to_bits(if currentlyEnabled(Ext_U) then User else Machine)"}
+    - {csr: mstatus, field: MPV, value: "0b0"}
+    - {csr: mstatus, field: MPRV, value: "0b0"}
+      # 填不进④：原文 if cur_privilege != Machine then mstatus[MPRV] = 0b0（cur_privilege 指**新**特权级）；无 when 槽，写成无条件是错的
+  next_pc: "prepare_xret_target(Machine)"
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进③（特权级切换 · 归 C，模板未定）：cur_privilege = privLevel_bits(…) 是本指令的主效果，update 只有 regs / csr / next_pc，
+  #   cur_privilege 是第四种载体。本卡把它记在 calculate（见上），是权宜。sret 同
+  # 落槽表待裁决：zicfilp_restore_elp_on_xret（Zicfilp 钩子，同 ⑧）· long_csr_write_callback · xret_callback · print_log（模拟器回调）

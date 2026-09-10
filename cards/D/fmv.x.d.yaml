@@ -1,0 +1,56 @@
+# fmv.x.d · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/dext_insts.sail execute(F_UN_X_TYPE_D)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/FD/dext_insts.sail execute(F_UN_X_TYPE_D) L852–L856
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\D\fmv.x.d.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   assert(xlen >= 64 & flen >= 64); X(rd) = sign_extend(F(rs1)[63..0]); RETIRE_SUCCESS
+
+template: A1-v1
+
+card:
+  key: fmv.x.d
+  verified: null
+
+decode:
+  extension: D
+  # extension 吸收了 Sail encdec 的 when haveSingleFPU()/haveDoubleFPU() = currentlyEnabled(Ext_F/D) | currentlyEnabled(Ext_Zfinx)，
+  # 而 currentlyEnabled(Ext_F) = hartSupports(Ext_F) & misa[F] == 0b1 & currentlyEnabled(Ext_Zicsr) & mstatus[FS] != 0b00 &
+  #   (if inVirtualPrivilege() then vsstatus[FS] != 0b00 else true)
+  # 即「FS = Off → 非法」藏在 extension 这一格里（模板注 ⁽¹⁾ 的约定），本卡 dynamic_check 不再重复。Zfinx 不在本轮范围
+  xlen: 64                              # RV64-only（Sail when xlen >= 64）
+  mnemonic: fmv.x.d
+  aliases: []
+  encoding:
+    pattern: "1110001 00000 ..... 000 ..... 1010011"
+    fields: {rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+operand_fetch:
+  operands:
+    - {type: F, id: rs1}
+  implicit_reads: []
+
+calculate:
+  - {out: result, width: 64, op: "sign_extend(F(rs1)[63..0])"}   # 64 → 64 恒等
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []                        # 浮点运算不抛异常（结果与 fflags 承载）；Illegal 由 dynamic_check 出
+  precision: null

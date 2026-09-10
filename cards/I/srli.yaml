@@ -1,0 +1,59 @@
+# srli · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(SHIFTIOP) L203–L211（803f192b），op = RISCV_SRLI
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(SHIFTIOP) L203–L211
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）。子句原文：
+#   function clause execute SHIFTIOP(shamt, rs1, rd, op) = {
+#     let shamt = shamt[log2_xlen - 1 .. 0];
+#     X(rd) = match op { SLLI => X(rs1) << shamt, SRLI => X(rs1) >> shamt, SRAI => shift_bits_right_arith(X(rs1), shamt) };
+#     RETIRE_SUCCESS }
+
+template: A1-v1
+
+card:
+  key: srli
+  verified: null
+
+decode:
+  extension: I
+  xlen: null                            # RV32/64 都有；但编码按 RV64 实例化，见下 pattern 注
+  mnemonic: srli
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: "000000 ...... ..... 101 ..... 0010011"   # 记法 @sh6（编码格式.md）
+    fields: {shamt: "20:6", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, shamt"
+    # 填不进⑦（XLEN 编码分歧 · 归 A 自身）：同一 mnemonic 在 RV32 下是 7 位固定 + shamt 5 位（20:5），RV64 下是 6 位固定 + shamt 6 位。
+    # 模板 decode.encoding 只有一个槽，装不下两种 XLEN 实例；本卡按 RV64 实例化填（方案 §2.3 第 3 条）。
+    # xlen: null 表示「两种 XLEN 都有这条指令」，不表示「两种 XLEN 编码相同」——这是隐式空格，已登记
+  overlap: []                           # rd=x0 是 spec HINT 表保留形态
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: shamt}
+  implicit_reads: []
+
+calculate:
+  - {out: shamt, width: 6, op: "shamt[log2_xlen - 1 .. 0]"}   # Sail let shamt 遮蔽同名编码字段（RV64 取 6 位）——填不进⑬（let 同名重绑定）
+  - {out: result, width: 64, op: "X(rs1) >> shamt"}   # RISCV_SRLI 分支：逻辑右移，移位量 = 遮蔽后的 shamt（6 位）
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

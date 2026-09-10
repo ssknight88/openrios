@@ -1,0 +1,63 @@
+# flh · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/fext_insts.sail execute(LOAD_FP（width = 2）)（803f192b）
+# extension 吸收了 Sail encdec 的 when（currentlyEnabled(Ext_F/D/Zfh…)，内含 mstatus[FS] != 0b00）—— 模板注 ⁽¹⁾ 约定，dynamic_check 不再重复
+# encdec when float_load_store_width_supported(2) = Zfhmin | Zfbfmin
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: flh
+  verified: null
+
+decode:
+  extension: Zfhmin
+  xlen: null
+  mnemonic: flh
+  aliases: []
+  encoding:
+    pattern: "............ ..... 001 ..... 0000111"
+    fields: {imm: "20:s12", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, imm(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate: 
+  - {out: offset, width: 64, op: "sign_extend(imm)"}
+  - {out: vaddr, width: 64, op: "X(rs1) + offset"}
+
+memory:
+  request:
+    type: R
+    width: 16
+    address: vaddr
+    aq: null
+    rl: null
+    read: {out: result, width: 16}
+    modify: null
+    write: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: F, id: rd, width: 64, value: "nan_box(result)"}   # 16 → 64，高位全 1
+  csr: 
+    - {csr: mstatus, field: FS, value: "extStatus_map(Dirty)"}
+    - {csr: mstatus, field: SD, value: "0b1"}
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: 
+    - {rule: "memory-attr(R)", cause: [E_Load_Addr_Align, E_Load_Access_Fault, E_Load_Page_Fault], tval: vaddr}
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS

@@ -1,0 +1,49 @@
+# ecall · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(ECALL) L541–L558（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(ECALL) L541–L558
+
+template: A1-v1
+
+card:
+  key: ecall
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: ecall
+  aliases: []
+  encoding:
+    pattern: "000000000000 00000 000 00000 1110011"   # Sail L538–L539，全固定位
+    fields: {}
+    assembly: ""
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: []
+  implicit_reads: [cur_privilege]       # Sail L542：选 cause，概念-1 注 6 列为 mode()
+
+calculate:
+  - {out: exc_type, width: null, op: "match cur_privilege { User | VirtualUser => E_U_EnvCall(), Supervisor => E_S_EnvCall(), VirtualSupervisor => E_VS_EnvCall(), Machine => E_M_EnvCall() }"}
+    # Sail L542–L548：ExceptionType 枚举，非位串；编号 8 / 9 / 10 / 11
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: null                         # 不 retire，next PC 由异常处理流程接管
+
+outcome:
+  retire: never                         # Sail L557 trap(c)；spec：不视为 retire、不计 minstret
+  exceptions:
+    - {when: always, cause: exc_type, tval: 0}   # Sail L549–L556：excinfo = zeros()
+      # UDB：param TRAP_ON_ECALL_FROM_{M,S,U,VS} = false 时走 builtin eei_ecall_from_*（不 trap 路径），Sail 无此路径
+  precision: precise                    # UDB 直接 raise_precise，不允许 imprecise

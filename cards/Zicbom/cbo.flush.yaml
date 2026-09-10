@@ -1,0 +1,63 @@
+# cbo.flush · 按 card.template.v1.yaml 第三稿；语义抄 Sail Zicbom/zicbom_insts.sail execute(ZICBOM(CBO_FLUSH) → process_clean_inval)（803f192b）
+# 填不进⑳（缓存块访问 · 归 A 自身）：访问类型是 CacheAccess(CB_*)，粒度是 cache_block_size = 2 ^ plat_cache_block_size_exp（UDB param CACHE_BLOCK_SIZE，RVA23 由 Zic64b 定 64 B）。memory.request.type 枚举 R|W|RMW|LR|SC 装不下，width 是参数不是常数
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: cbo.flush
+  verified: null
+
+decode:
+  extension: Zicbom
+  xlen: null
+  mnemonic: cbo.flush
+  aliases: []
+  encoding:
+    pattern: "000000000010 ..... 010 00000 0001111"
+    fields: {rs1: "15:5"}
+    assembly: "(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: sometimes, u: sometimes, vs: sometimes, vu: sometimes}
+  conditions: 
+    - {when: "cur_privilege == Supervisor & menvcfg[CBCFE] == 0b0", params: [cur_privilege, menvcfg.CBCFE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == User & not(menvcfg[CBCFE] == 0b1 & (not(currentlyEnabled(Ext_S)) | senvcfg[CBCFE] == 0b1))", params: [cur_privilege, menvcfg.CBCFE, senvcfg.CBCFE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualSupervisor & menvcfg[CBCFE] == 0b0", params: [cur_privilege, menvcfg.CBCFE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualSupervisor & henvcfg[CBCFE] == 0b0", params: [cur_privilege, henvcfg.CBCFE], raise: Virtual_Instruction}
+    - {when: "cur_privilege == VirtualUser & menvcfg[CBCFE] == 0b0", params: [cur_privilege, menvcfg.CBCFE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualUser & (henvcfg[CBCFE] == 0b0 | senvcfg[CBCFE] == 0b0)", params: [cur_privilege, henvcfg.CBCFE, senvcfg.CBCFE], raise: Virtual_Instruction}
+      # 以上是 feature_enabled_for_priv(cur_privilege, menvcfg[CBCFE], read_senvcfg()[CBCFE], read_henvcfg()[CBCFE])（core/sys_regs.sail L1188）按 §2.3 第 6 条拆的 match 臂；Machine 恒 ENABLED
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+  implicit_reads: [cur_privilege]
+
+calculate: 
+  - {out: access, width: null, op: "CacheAccess(CB_manage(CBO_FLUSH))"}
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: cache_block_size, width: null, op: "2 ^ plat_cache_block_size_exp"}
+  - {out: negative_offset, width: 64, op: "(rs1_val & ~(zero_extend(ones(plat_cache_block_size_exp)))) - rs1_val"}   # 对齐到块起始的负偏移
+  - {out: eff_priv, width: null, op: "effectivePrivilege(access, mstatus, cur_privilege)"}
+  - {out: vaddr_for_error, width: 64, op: "vaddr - negative_offset"}   # 报错用原地址，不用块起始
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: 
+    - {rule: "memory-attr(CacheAccess)", cause: [E_Load_Access_Fault, E_Load_Page_Fault, E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr_for_error}   # translateAddr → trap({e with excinfo = vaddr_for_error})；phys_access_check → memory_exception(e, vaddr_for_error, access)；cause 家族由 access 定，未展开
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # Sail 模型无缓存：process_clean_inval 只做翻译与权限检查，不产生数据搬运；卡上 memory.request: null 是「Sail 无访存」不是「指令无访存」—— ⑳ 的另一面
+  # 填不进⑨：Ext_DataAddr_Check_Failure

@@ -1,0 +1,51 @@
+# auipc · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(UTYPE) L27–L34（803f192b），op = AUIPC
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(UTYPE) L27–L34
+
+template: A1-v1
+
+card:
+  key: auipc
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: auipc
+  aliases: []
+  encoding:
+    pattern: ".................... ..... 0010111"
+    fields: {imm: "12:s20 <<12", rd: "7:5"}
+    assembly: "rd, imm"
+  overlap:
+    - {when: "rd=x0", is: hint, of: lpad}   # Zicfilp 借用；UDB hints[]
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: imm, id: imm}
+  implicit_reads: [PC]                  # Sail L31 get_arch_pc() = PC（core/pc_access.sail L18）
+
+calculate:
+  - {out: "off", width: 64, op: "sign_extend(imm @ 0x000)"}   # Sail L28：imm 左移 12 再符号扩展
+  - {out: result, width: 64, op: "PC + off"}                # Sail L31：Sail 无 let，直接 X(rd) = get_arch_pc() + off
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: result}   # Sail L29
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

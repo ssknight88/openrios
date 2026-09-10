@@ -1,0 +1,79 @@
+# flw · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/fext_insts.sail execute(LOAD_FP)（803f192b），width = 4
+# Sail 定位（本地 803f192b 核对）：extensions/FD/fext_insts.sail execute(LOAD_FP) L280–L291
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\F\flw.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   function clause execute LOAD_FP(imm, rs1, rd, width) = {
+#     assert(width <= flen_bytes);
+#     let offset : xlenbits = sign_extend(imm);
+#     match vmem_read(rs1, offset, width, Load(Data), false, false, false) {
+#       Ok(result) => { F(rd) = nan_box(result); RETIRE_SUCCESS },
+#       Err(e)     => e,
+#     }
+#   }
+# encdec when float_load_store_width_supported(width)
+
+template: A1-v1
+
+card:
+  key: flw
+  verified: null
+
+decode:
+  extension: F
+  # extension 吸收了 Sail encdec 的 when haveSingleFPU()/haveDoubleFPU() = currentlyEnabled(Ext_F/D) | currentlyEnabled(Ext_Zfinx)，
+  # 而 currentlyEnabled(Ext_F) = hartSupports(Ext_F) & misa[F] == 0b1 & currentlyEnabled(Ext_Zicsr) & mstatus[FS] != 0b00 &
+  #   (if inVirtualPrivilege() then vsstatus[FS] != 0b00 else true)
+  # 即「FS = Off → 非法」藏在 extension 这一格里（模板注 ⁽¹⁾ 的约定），本卡 dynamic_check 不再重复。Zfinx 不在本轮范围
+  xlen: null
+  mnemonic: flw
+  aliases: []
+  encoding:
+    pattern: "............ ..... 010 ..... 0000111"   # width_enc(4)
+    fields: {imm: "20:s12", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, imm(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate:
+  - {out: offset, width: 64, op: "sign_extend(imm)"}
+  - {out: vaddr, width: 64, op: "X(rs1) + offset"}
+
+memory:
+  request:
+    type: R
+    width: 32
+    address: vaddr
+    aq: null
+    rl: null
+    read: {out: result, width: 32}        # Sail Ok(result)
+    modify: null
+    write: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: F, id: rd, width: 64, value: "nan_box(result)"}   # 32 → 64，高位全 1
+  csr:
+    - {csr: mstatus, field: FS, value: "extStatus_map(Dirty)"}   # wF → dirty_fd_context()
+    - {csr: mstatus, field: SD, value: "0b1"}
+      # 填不进⑤：inVirtualPrivilege() 时还写 vsstatus[FS] / [SD]，视图归 C
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions:
+    - {rule: "memory-attr(R)", cause: [E_Load_Addr_Align, E_Load_Access_Fault, E_Load_Page_Fault], tval: vaddr}
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS

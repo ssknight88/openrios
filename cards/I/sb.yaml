@@ -1,0 +1,62 @@
+# sb · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(STORE) L316–L331 + sys/vmem_utils.sail vmem_write L338–L347 / vmem_write_addr L216–（803f192b），width = 1
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(STORE) L316–L331
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10），行号见「Sail 定位」行；结构参照样例卡 cards/I/sw.yaml
+
+template: A1-v1
+
+card:
+  key: sb
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: sb
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: "....... ..... ..... 000 ..... 0100011"   # Sail L312–L314 同族：width_enc(1)
+    fields: {imm: "25:s7 7:5", rs2: "20:5", rs1: "15:5"}   # UDB location 31-25|11-7
+    assembly: "rs2, imm(rs1)"
+  overlap: []
+  reserved: []                          # 族级 funct3=100..111 无定义，归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate:
+  - {out: offset, width: 64, op: "sign_extend(imm)"}   # Sail L317
+  - {out: vaddr, width: 64, op: "X(rs1) + offset"}     # vmem_write L339–L341
+  - {out: data, width: 8, op: "X(rs2)[7 .. 0]"}        # Sail L326：X(rs2)[width * 8 - 1 .. 0]
+
+memory:
+  request:
+    type: W
+    width: 8
+    address: vaddr
+    aq: null
+    rl: null
+    read: null
+    modify: null
+    write: {out: data, width: 8}                         # Sail L327：vmem_write(…, 1, data, Store(Data))
+  va_constraint: null                   # 指令不要求对齐
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal                        # Sail L328
+  exceptions:
+    - {rule: "memory-attr(W)", cause: [E_SAMO_Addr_Align, E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr}
+      # vmem_write_addr L221–L227 对齐（配置 6 / 7 / 不抛）· 翻译 → 15 · PMA / PMP → 7
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS

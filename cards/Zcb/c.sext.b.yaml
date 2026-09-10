@@ -1,0 +1,56 @@
+# c.sext.b · 按 card.template.v1.yaml 第三稿；语义抄 Sail（803f192b），本体：ExecuteAs(ZBB_EXTOP(rsd, rsd, SEXTB))
+# Sail 定位（本地 803f192b 核对）：extensions/C/zcb_insts.sail execute(C_SEXT_B) L134–L137
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\Zcb\c.sext.b.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+
+template: A1-v1
+
+card:
+  key: c.sext.b
+  verified: null
+
+decode:
+  extension: Zcb                          # 填不进⑰（多扩展合取 · 归 A 自身）：Sail when currentlyEnabled(Ext_Zcb) & currentlyEnabled(Ext_Zbb)；extension 是单值，合取写不下
+  xlen: null
+  mnemonic: c.sext.b
+  aliases: []
+  encoding:
+    pattern: "100 111 ... 11 001 01"
+    fields: {rsd: "7:3"}
+    assembly: "rsd"
+    # 填不进⑯（16 位编码记法 · 归 A 自身）：编码格式.md 只定义了 32 位记法；本卡按同一记法写 16 字符图案。
+    #   3 位寄存器字段（rd' rs1' rs2'）经 creg2reg_idx 映到 x8..x15（f 寄存器同理映 f8..f15），记法里没有「+8」的写法，此处只在注释说明
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rsd}
+  implicit_reads: []
+
+calculate:
+  - {out: rs1_val, width: 64, op: "X(rsd)"}                     # 本体 ZBB_EXTOP let rs1_val
+  - {out: result, width: 64, op: "sign_extend(rs1_val[7..0])"}  # SEXTB 分支
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rsd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进⑭（指向本体 · 归 A 自身）：Sail 子句是 ExecuteAs(本体)，方案 §2.1 说「压缩指令只有 Decode + 指向本体」，
+  #   但模板没有「指向本体」的键。本卡实验做法：Decode 全填，其余六步按本体展开、操作数代换，本体见卡头。
+  #   代价是与本体卡重复；好处是列查询（方案 §1.1）在本卡上仍能工作。要不要开 decode.expands_to 之类的键，review 定

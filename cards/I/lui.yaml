@@ -1,0 +1,51 @@
+# lui · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(UTYPE) L27–L34（803f192b），op = RISCV_LUI
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(UTYPE) L27–L34
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10），行号见「Sail 定位」行。原推导记录：子句行范围取自同子句样例卡 cards/I/auipc.yaml；
+#        本卡 calculate.op 按 spec + auipc.yaml 同构推得，未见 Sail 原话
+
+template: A1-v1
+
+card:
+  key: lui
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: lui
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: ".................... ..... 0110111"
+    fields: {imm: "12:s20 <<12", rd: "7:5"}
+    assembly: "rd, imm"
+  overlap: []                           # rd=x0 是 spec HINT 表保留形态；auipc 的 lpad(Zicfilp) 重叠不适用于 lui
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: imm, id: imm}
+  implicit_reads: []                    # 不读 PC，是与 auipc 的唯一差别
+
+calculate:
+  - {out: "off", width: 64, op: "sign_extend(imm @ 0x000)"}   # Sail let off（UTYPE L28，已按 803f192b 原文核）；LUI 分支 X(rd) = off；YAML 保留字加引号
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "off"}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

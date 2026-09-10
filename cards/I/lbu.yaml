@@ -1,0 +1,61 @@
+# lbu · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(LOAD) L285–L298 + sys/vmem_utils.sail vmem_read L323–L332 / vmem_read_addr L118–（803f192b），width = 1 · is_unsigned = true
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(LOAD) L285–L298
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10），行号见「Sail 定位」行；结构参照样例卡 cards/I/lw.yaml
+
+template: A1-v1
+
+card:
+  key: lbu
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: lbu
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: "............ ..... 100 ..... 0000011"   # Sail L281–L283 同族：funct3 = is_unsigned @ width_enc(1)
+    fields: {imm: "20:s12", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, imm(rs1)"
+  overlap: []
+  reserved: []                          # 族级 funct3=111 无定义，归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: imm}
+  implicit_reads: []                    # MPRV / satp / PMP 是规则参数，归内存属性
+
+calculate:
+  - {out: offset, width: 64, op: "sign_extend(imm)"}   # Sail L286
+  - {out: vaddr, width: 64, op: "X(rs1) + offset"}     # vmem_read L324–L326：get_transformed_data_addr(rs1, offset)
+
+memory:
+  request:
+    type: R
+    width: 8
+    address: vaddr
+    aq: null
+    rl: null
+    read: {out: data, width: 8}        # Sail L291–L292：vmem_read(…, 1, Load(Data))
+    modify: null
+    write: null
+  va_constraint: null                   # 指令不要求对齐；misaligned 是实现属性（内存属性侧）
+  context: null                         # 有效特权级按 MPRV 取（vmem_read_addr L145），归内存属性
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "zero_extend(data)"}   # Sail L293 extend_value(true, data)（L278）
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal                        # Sail L294
+  exceptions:
+    - {rule: "memory-attr(R)", cause: [E_Load_Addr_Align, E_Load_Access_Fault, E_Load_Page_Fault], tval: vaddr}
+      # vmem_read_addr L124–L133 对齐（plat_misaligned_exception 配置 4 / 5 / 不抛）· 翻译 → 13 · PMA / PMP → 5；条件全在内存属性，指令侧无自身条件
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS

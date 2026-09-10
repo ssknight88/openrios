@@ -1,0 +1,50 @@
+# sh1add.uw · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zba_insts.sail execute(ZBA_RTYPEUW)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zba_insts.sail execute(ZBA_RTYPEUW) L53–L56
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: sh1add.uw
+  verified: null
+
+decode:
+  extension: Zba
+  xlen: 64
+  mnemonic: sh1add.uw
+  aliases: []
+  encoding:
+    pattern: "0010000 ..... ..... 010 ..... 0111011"
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate: 
+  - {out: result, width: 64, op: "(zero_extend(X(rs1)[31..0]) << shamt) + X(rs2)"}   # ZBA_RTYPEUW，shamt = 0b01 由编码 funct3[2:1] 固定
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

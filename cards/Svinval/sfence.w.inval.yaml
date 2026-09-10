@@ -1,0 +1,49 @@
+# sfence.w.inval · 按 card.template.v1.yaml 第三稿；语义抄 Sail Svinval/svinval_insts.sail execute(SFENCE_W_INVAL)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/Svinval/svinval_insts.sail execute(SFENCE_W_INVAL) L32–L38
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: sfence.w.inval
+  verified: null
+
+decode:
+  extension: Svinval
+  xlen: null
+  mnemonic: sfence.w.inval
+  aliases: []
+  encoding:
+    pattern: "0001100 00000 00000 000 00000 1110011"
+    fields: {}
+    assembly: ""
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: sometimes, u: never, vs: sometimes, vu: never}   # UDB access（本地 0a3a1e2）；原卡 {s: always, u: never, vs: always, vu: never}
+  conditions: 
+    - {when: "cur_privilege == User", params: [cur_privilege], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualUser", params: [cur_privilege], raise: Virtual_Instruction}
+
+operand_fetch:
+  operands: []
+  implicit_reads: [cur_privilege]
+
+calculate: []
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进②（事件 · 归「序」）：Sail 原文注释「Implemented as no-op as all memory operations are visible immediately」—— 它的全部语义（对 sinval.vma 的排序栅栏）在 Sail 里也是空的；卡上除 conditions 外全空

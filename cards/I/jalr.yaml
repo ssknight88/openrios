@@ -1,0 +1,79 @@
+# jalr · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/jalr_seq.sail execute(JALR) + I/base_insts.sail jump_to（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/jalr_seq.sail execute(JALR) L11–L26
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）。子句原文：
+#   function clause execute JALR(imm, rs1, rd) = {
+#     update_elp_state(rs1);
+#     let link_address = get_next_pc();
+#     let target = X(rs1) + sign_extend(imm);
+#     match jump_to([target with 0 = 0b0]) {
+#       Retire_Success() => { X(rd) = link_address; Retire_Success() },
+#       failure => failure,
+#     }
+#   }
+# ⚠ 对 指令清单.md:19 的更正：JALR 的 execute 子句**不在** extensions/I/base_insts.sail。
+#   该文件在 JALR 的 encdec / assembly 之后注明「see jalr_seq.sail or jalr_rmem.sail for the
+#   execute clause」——同目录两份实现，jalr_seq 是顺序模型、jalr_rmem 是内存模型变体。
+#   指令清单.md 的「Sail 文件」列对 I 目录只写了 base_insts.sail，漏了这一条。
+# 行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# 两份实现已比对（本地 803f192b）：jalr_rmem.sail 的 JALR **不做**目标对齐检查（文件内 FIXME 自认），且先写 rd 再算目标；
+#   jalr_seq.sail 完整。本卡抄 jalr_seq；rmem 是内存模型变体，不作 golden。review 如有异议可改
+
+template: A1-v1
+
+card:
+  key: jalr
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: jalr
+  aliases:                              # UDB pseudoinstructions（本地 0a3a1e2 已核）
+    - {name: jr, when: "rd=x0"}
+    - {name: ret, when: "rd=x0, rs1=x1, imm=0"}
+  encoding:
+    pattern: "............ ..... 000 ..... 1100111"
+    fields: {imm: "20:s12", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, imm(rs1)"
+    # Sail encdec 原话：JALR(imm, rs1, rd) <-> imm @ encdec_reg(rs1) @ 0b000 @ encdec_reg(rd) @ 0b1100111
+  overlap: []
+  reserved: []                          # 族级 funct3=001..111 无定义，归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: imm}
+  implicit_reads: [PC]                  # 只用于返回地址；目标地址来自 rs1，与 jal 不同
+
+calculate:
+  - {out: link_address, width: 64, op: "get_next_pc()"}          # Sail let 名
+  - {out: target, width: 64, op: "X(rs1) + sign_extend(imm)"}    # Sail let 名；注意最低位尚未清零
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: link_address}   # Sail：X(rd) = link_address，写在 Retire_Success() 分支内
+  csr: []
+  next_pc: "[target with 0 = 0b0]"      # Sail：jump_to([target with 0 = 0b0]) → set_next_pc；清零在实参位置，不在 let 里
+
+outcome:
+  retire: normal
+  exceptions:
+    - {when: "bit_to_bool(target[1]) & not(currentlyEnabled(Ext_Zca))", cause: E_Fetch_Addr_Align, tval: "[target with 0 = 0b0]"}
+      # jump_to 的形参也叫 target，其值是 [target with 0 = 0b0]。清零只动 bit0，bit1 不受影响，
+      # 故 when 里直接引本卡的 target；tval 用清零后的值，与 Sail 传进 exception_context 的一致
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # ①（次序）已关 2026-09-10：同 jal，见 cards/I/jal.yaml 卡尾
+  # 填不进⑧（扩展钩子无槽 · 落槽率破 100%）：子句第一句 update_elp_state(rs1) 本卡无处可放 ——
+  #   不是通用寄存器写、不是 CSR 写、不是访存，七步无槽。它也不属于 方案.md:77 §2.3 第 5 条
+  #   允许剥掉的四类噪音（类型 / 断言 · Ok/Err 包装 · 读序调整 · 非本指令分支）中的任何一类，
+  #   按该条「其它落不进的是缺口，不是噪音」判定为缺口。见 缺口清单.md
+  # 填不进⑨（扩展检查的 cause · 归 A 自身）：同 jal，见 cards/I/jal.yaml 卡尾

@@ -1,0 +1,63 @@
+# ⚠ 本卡是 kit 自带的 10 张样例卡之一，本轮被改过一处：dynamic_check.conditions 原第 5 条（Svbare 守卫）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(SFENCE_VMA) L718–L738
+#   挪到第 1 条。理由：它在 Sail 里是 encdec 的 when 守卫，比 execute 内的四条先判；方案 §2.1（2026-09-10）
+#   定「列表顺序 = 优先级」后须按判定顺序排。内容一字未改，只换了位置。
+# sfence.vma · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(SFENCE_VMA) L718–L738 + encdec L714–L717（803f192b）
+
+template: A1-v1
+
+card:
+  key: sfence.vma
+  verified: null
+
+decode:
+  extension: S
+  xlen: null
+  mnemonic: sfence.vma
+  aliases: []
+  encoding:
+    pattern: "0001001 ..... ..... 000 00000 1110011"   # Sail L714–L715
+    fields: {rs2: "20:5", rs1: "15:5"}
+    assembly: "rs1, rs2"
+  overlap: []
+  reserved: []                          # rd 位固定 00000 是 match 固定位，rd≠0 属族级空间，归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: never, vs: always, vu: never}   # UDB 标 s always，与 TVM 条件矛盾，应为 sometimes；只当索引
+  conditions:
+    - {when: "not(virtual_memory_supported()) & config extensions.Svbare.sfence_vma_illegal_if_svbare_only", params: [param:TRAP_ON_SFENCE_VMA_WHEN_SATP_MODE_IS_READ_ONLY], raise: Illegal_Instruction}
+      # Sail 放在 encdec guard L717（译码即 illegal），比下面四条先判 —— 列表顺序 = 优先级，故排第 1；
+      # UDB 同名 param；按「要读状态 / 配置才能判」归此步
+    - {when: "cur_privilege == User", params: [cur_privilege], raise: Illegal_Instruction}                                    # Sail L726
+    - {when: "cur_privilege == Supervisor & mstatus[TVM] == 0b1", params: [cur_privilege, mstatus.TVM], raise: Illegal_Instruction}    # Sail L727–L728
+    - {when: "cur_privilege == VirtualUser", params: [cur_privilege], raise: Virtual_Instruction}                             # Sail L732
+    - {when: "cur_privilege == VirtualSupervisor & hstatus[VTVM] == 0b1", params: [cur_privilege, hstatus.VTVM], raise: Virtual_Instruction}   # Sail L733–L734
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+    # 按寄存器号判空：rs1 == zreg / rs2 == zreg（L719 L723），x0 在此是编码位不是操作数值
+  implicit_reads: [cur_privilege, hgatp.VMID]   # L724 get_vmid(VS_Stage)；概念-1 注 6
+
+calculate:
+  - {out: addr, width: 64, op: "if rs1 != zreg then Some(X(rs1)) else None()"}                                   # Sail L719
+  - {out: asid, width: 16, op: "if rs2 != zreg then Some(zero_extend(X(rs2)[asidlen - 1 .. 0])) else None()"}   # Sail L723；asidlen = param ASID_WIDTH
+  - {out: vmid, width: 14, op: "if cur_privilege == VirtualSupervisor then Some(get_vmid(VS_Stage)) else None()"}   # Sail L724
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+  # 待定（概念-1）：flush_TLB(asid, vmid, addr, S_Stage | VS_Stage)（L729 L731 L735）与页表访问排序无槽位
+  # UDB 侧 order_pgtbl_writes_before_vmafence / invalidate_translations / order_pgtbl_reads_after_vmafence 是 builtin；vaddr 非法时静默（canonical_vaddr?），Sail 不检查
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal                        # Sail L729 L731 L735
+  exceptions: []                        # Illegal / Virtual 由 dynamic_check 出，无其它
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS

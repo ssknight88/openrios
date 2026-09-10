@@ -1,0 +1,54 @@
+# mop.r.n · 按 card.template.v1.yaml 第三稿；语义抄 Sail — execute(—（无 Sail）)（803f192b）
+# ⚠ 无 Sail：803f192b 未实现 Zimop / Zcmop（指令清单.md:8 已登记）。语义抄 UDB operation()，卡头标「无 Sail」，落槽表无从做
+# xlsx 一行 = 一族（N 是编码字段），按「一行一张」写一张；UDB 是每个 N 一个文件（mop.r.0 … mop.r.31）
+# n[4] = bit30 · n[3:2] = bits27–26 · n[1:0] = bits21–20，由 UDB mop.r.{0,1,2,4,8,16} 的 match 推得
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: mop.r.n
+  verified: null
+
+decode:
+  extension: Zimop
+  xlen: null
+  mnemonic: mop.r.n
+  aliases: []
+  encoding:
+    pattern: "1.00..0111.. ..... 100 ..... 1110011"
+    fields: {n: "30:1 26:2 20:2", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: imm, id: n}
+  implicit_reads: []
+
+calculate: 
+  - {out: result, width: 64, op: "0"}   # UDB operation(): X[xd] = 0;（may-be-operation：未被其它扩展重定义时写 0）
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 读 rs1 是「允许未来扩展读」，UDB operation() 不读；operands 按编码字段登记
+  # Zicfiss 借用 mop.r.28/29（ssrdp / sspopchk）等 —— 本轮 Zicfiss 不在范围，未列 overlap

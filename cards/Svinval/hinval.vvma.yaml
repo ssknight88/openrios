@@ -1,0 +1,54 @@
+# hinval.vvma · 按 card.template.v1.yaml 第三稿；语义抄 Sail Svinval/svinval_insts.sail execute(HINVAL_VVMA → ExecuteAs(HFENCE_VVMA))（803f192b）
+# 填不进⑭：按本体 cards/H/hfence.vvma.yaml 展开
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: hinval.vvma
+  verified: null
+
+decode:
+  extension: Svinval
+  xlen: null
+  mnemonic: hinval.vvma
+  aliases: []
+  encoding:
+    pattern: "0010011 ..... ..... 000 00000 1110011"
+    fields: {rs2: "20:5", rs1: "15:5"}
+    assembly: "rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: never, vs: never, vu: never}
+  conditions: 
+    - {when: "inVirtualPrivilege()", params: [cur_privilege], raise: Virtual_Instruction}
+    - {when: "cur_privilege == User", params: [cur_privilege], raise: Illegal_Instruction}
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: [cur_privilege, hgatp.VMID]
+
+calculate: 
+  - {out: addr, width: 64, op: "if rs1 != zreg then Some(X(rs1)) else None()"}
+  - {out: asid, width: 16, op: "if rs2 != zreg then Some(if asidlen == 0 then zeros() else zero_extend(X(rs2)[asidlen - 1 .. 0])) else None()"}
+  - {out: vmid, width: 14, op: "Some(get_vmid(VS_Stage))"}
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进②：flush_TLB 无槽

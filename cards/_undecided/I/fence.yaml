@@ -1,0 +1,75 @@
+# fence · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(FENCE) L463–L488（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(FENCE) L463–L492
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）。子句原文（去注释）：
+#   let fiom = is_fiom_active();
+#   let pred = effective_fence_set(pred, fiom);
+#   let succ = effective_fence_set(succ, fiom);
+#   match (pred[1 .. 0], succ[1 .. 0]) {
+#     (0b11, 0b11) => sail_barrier(Barrier_RISCV_rw_rw), (0b10, 0b11) => sail_barrier(Barrier_RISCV_r_rw), (0b10, 0b10) => sail_barrier(Barrier_RISCV_r_r),
+#     (0b11, 0b01) => sail_barrier(Barrier_RISCV_rw_w), (0b01, 0b01) => sail_barrier(Barrier_RISCV_w_w), (0b01, 0b11) => sail_barrier(Barrier_RISCV_w_rw),
+#     (0b11, 0b10) => sail_barrier(Barrier_RISCV_rw_r), (0b10, 0b01) => sail_barrier(Barrier_RISCV_r_w), (0b01, 0b10) => sail_barrier(Barrier_RISCV_w_r),
+#     (_, 0b00) => (), (0b00, _) => () };
+#   RETIRE_SUCCESS
+#
+# 本卡是 方案.md:106 §2.6 已登记缺口「fence / TLB 失效类事件」的实例，见卡尾
+
+template: A1-v1
+
+card:
+  key: fence
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: fence
+  aliases:                              # UDB pseudoinstructions（本地 0a3a1e2 已核）
+    - {name: fence, when: "pred == 4'b1111), (succ == 4'b1111"}
+  encoding:
+    pattern: ".... .... .... ..... 000 ..... 0001111"
+    fields: {fm: "28:4", pred: "24:4", succ: "20:4", rs1: "15:5", rd: "7:5"}
+    assembly: "pred, succ"
+  overlap:
+    - {when: "fm=0b1000, pred=0b0011, succ=0b0011", is: inst, of: fence.tso}
+      # fence.tso 占 fence 的编码空间；fence.tso 不在 xlsx 208 条内，本轮无卡
+    - {when: "fm=0b0000, pred=0b0000, succ=0b0001, rs1=x0, rd=x0", is: hint, of: pause}
+      # Zihintpause 借 fence 编码；pause 不在 xlsx 208 条内，本轮无卡
+  reserved: []                          # fm 其它取值 spec 保留（须按 fence 执行），归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: imm, id: pred}
+    - {type: imm, id: succ}
+  implicit_reads: [cur_privilege, menvcfg.FIOM, senvcfg.FIOM, henvcfg.FIOM]
+    # is_fiom_active()（core/sys_regs.sail L605）按 cur_privilege 选：M → false · S → menvcfg[FIOM] · U → menvcfg|senvcfg ·
+    # VS → menvcfg|henvcfg · VU → menvcfg|henvcfg|senvcfg。三个 CSR 字段是 C 项（⑤：同一位在三个 envcfg 里各有一份）
+
+calculate:
+  - {out: fiom, width: 1, op: "is_fiom_active()"}
+  - {out: pred, width: 4, op: "effective_fence_set(pred, fiom)"}   # 遮蔽同名编码字段——填不进⑬；FIOM 置位时 I/O 位蕴含 R/W
+  - {out: succ, width: 4, op: "effective_fence_set(succ, fiom)"}
+
+memory:
+  request: null                         # fence 不产生访存请求，只约束别的访存的次序
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进②（事件 · 归「序」，B 模板未定）：方案.md:106 §2.6 已登记，本卡是实例。原文的 match (pred[1 .. 0], succ[1 .. 0]) → sail_barrier(Barrier_RISCV_*)
+  #   九个分支 + 两个空集分支落不进任何格；sail_barrier 是 core/phys_mem_interface.sail L149 的内存模型原语。
+  #   这张卡七个槽位全部合法地填了 null / []，lint 会过，覆盖矩阵会记「显式 N/A ✓」，
+  #   但 fence 的全部语义（pred/succ 指定的读写次序约束）一个字都没进卡。
+  #   即：本格式下「显式 N/A」与「这条指令的语义无处可放」不可区分 —— 这正是方案要消灭的隐式空格，
+  #   只是换了个位置出现。fence · fence.tso · fence.i · sfence.vma · pause · wfi 共用此缺口

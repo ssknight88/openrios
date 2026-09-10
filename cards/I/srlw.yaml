@@ -1,0 +1,54 @@
+# srlw · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(RTYPEW) L374–L386（803f192b），op = RISCV_SRLW
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(RTYPEW) L374–L386
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10），行号见「Sail 定位」行。原推导记录：子句行范围取自同子句样例卡
+#        cards/I/addw.yaml；本卡 calculate.op 按 spec + addw.yaml 同构推得，未见 Sail 原话
+
+template: A1-v1
+
+card:
+  key: srlw
+  verified: null
+
+decode:
+  extension: I
+  xlen: 64                              # RV64-only；UDB definedBy.allOf [xlen: 64, I]
+  mnemonic: srlw
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: "0000000 ..... ..... 101 ..... 0111011"   # Sail L357 同族 encdec
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []                           # rd=x0 是 spec HINT 表保留形态
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位；动态 UXL 下的合法性 UDB 无落点
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate:
+  - {out: rs1_val, width: 32, op: "X(rs1)[31 .. 0]"}     # Sail L375
+  - {out: rs2_val, width: 32, op: "X(rs2)[31 .. 0]"}     # Sail L376
+  - {out: result, width: 32, op: "rs1_val >> rs2_val[4..0]"}   # L374–L386 内 RISCV_SRLW 分支：逻辑右移，W 系列取 rs2 低 5 位
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(result)"}   # Sail L384：32 → 64
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

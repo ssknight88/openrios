@@ -1,0 +1,63 @@
+# amoadd.w · 按 card.template.v1.yaml 第三稿；语义抄 Sail A/zaamo_insts.sail execute(AMO) L69–L162（803f192b），op = AMOADD · width = 4
+# Sail 定位（本地 803f192b 核对）：extensions/A/zaamo_insts.sail execute(AMO) L69–L162
+
+template: A1-v1
+
+card:
+  key: amoadd.w                         # 行键按「基名 + 变量」：aq/rl 进 encoding.fields，一张卡（A1 待定）
+  verified: null
+
+decode:
+  extension: Zaamo                      # A = Zaamo + Zalrsc；Sail encdec when amo_encoding_valid → currentlyEnabled(Ext_Zaamo)（L28–L30）
+  xlen: null
+  mnemonic: amoadd.w
+  aliases: []
+  encoding:
+    pattern: "00000 . . ..... ..... 010 ..... 0101111"   # Sail L62–L63：encdec_amoop(AMOADD)=00000 · width_enc_wide(4)=010
+    fields: {aq: "26:1", rl: "25:1", rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs2, (rs1)"
+    # UDB 把 aq/rl 写死在四份 match 里；Sail 一个子句带 aq rl 变量；isa_model mask 0xf800707f 当 don't-care
+  overlap: []                           # rd=x0 合法、结果丢弃，不是 HINT
+  reserved: []                          # 变量位全合法；族级 funct5 未定义值、funct3=000/001（无 Zabha）归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []                    # 翻译用的 MPRV / satp 是规则参数，归内存属性
+
+calculate:
+  - {out: vaddr, width: 64, op: "X(rs1)"}            # Sail L79：get_transformed_data_addr(rs1, zeros(), …)，无偏移
+  - {out: rs2_val, width: 32, op: "trunc(X(rs2))"}   # Sail L125：取低 32 位
+
+memory:
+  request:
+    type: RMW
+    width: 32
+    address: vaddr
+    aq: aq
+    rl: rl
+    read: {out: loaded, width: 32}                         # Sail L103–L117：mem_read 读回 vaddr 处旧值
+    modify: {out: result, width: 32, op: "rs2_val + loaded"}   # Sail L129：32 位模加
+    write: {out: result, width: 32}                                          # Sail L148：mem_write_value(addr, 4, result)，存回 vaddr
+  va_constraint: "is_aligned_addr(vaddr, 4)"               # Sail L84；Zaamo 条款（B 一条，18 条 AMO 共用）；豁免（MISALIGNED_AMO · 原子粒度 PMA）归内存属性
+  context: null                         # 有效特权级 effectivePrivilege(access, mstatus, cur_privilege)（L96）按 MPRV 取，归内存属性
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(loaded)"}   # Sail L151：旧值 32 → 64；只在 mem_write_value Ok 后写（L149）；rd=x0 丢弃
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal                        # Sail L153
+  exceptions:
+    - {when: "not(is_aligned_addr(vaddr, 4))", cause: [E_SAMO_Addr_Align, E_SAMO_Access_Fault], tval: vaddr}
+      # Sail L84–L94：plat_misaligned_exception 配置选 6 / 7 / 不抛（留给 PMA）；spec 原文 or，实现选一
+    - {rule: "memory-attr(RMW)", cause: [E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr}
+      # Sail L98–L117 翻译 / PMA / PMP 条件归内存属性；RMW → SAMO 家族，读半边亦报 SAMO
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS   # UDB 走 raise 非 raise_precise

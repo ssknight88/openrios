@@ -1,0 +1,98 @@
+# csrrsi · 按 card.template.v1.yaml 第三稿；语义抄 Sail Zicsr/zicsr_insts.sail execute(CSRImm) + doCSR（803f192b），op = CSRRS
+# Sail 定位（本地 803f192b 核对）：extensions/Zicsr/zicsr_insts.sail execute(CSRImm) L104–L107
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\Zicsr\csrrsi.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   function clause execute CSRImm(csr, imm, rd, op) = {
+#     let access_type = csr_access_type(op, rd == zreg, imm == zeros());
+#     doCSR(csr, zero_extend(imm), rd, op, access_type)
+#   }
+# doCSR 原文（本指令相关行）：
+#   match check_CSR_result(csr, cur_privilege, access_type) {
+#     CSR_Illegal()  => Illegal_Instruction(),
+#     CSR_Virtual()  => Virtual_Instruction(),
+#     CSR_Check_OK() => {
+#       if not(ext_check_CSR(csr, cur_privilege, access_type)) then Ext_CSR_Check_Failure()
+#       else {
+#         let read_val : xlenbits = if access_type != CSRWrite then read_CSR(csr) else zeros();
+#         let dest_val : xlenbits = match csr { 0x344 => read_mip(IncludePlatformInterrupts).bits,
+#                                              0x144 => read_sip(IncludePlatformInterrupts).bits, _ => read_val };
+#         if access_type == CSRRead then { csr_read_callback(csr, dest_val); X(rd) = dest_val; RETIRE_SUCCESS }
+#         else {
+#           let write_val : xlenbits = match op { … CSRRS => read_val | rs1_val, … };
+#           match write_CSR(csr, write_val) {
+#             Ok(final_val) => { X(rd) = dest_val; csr_write_callback(csr, final_val); RETIRE_SUCCESS },
+#             Err(()) => Illegal_Instruction(),
+#           } } } }
+# csr_access_type 原文（本指令相关行）：(CSRRS, _, true) => CSRRead · (CSRRS, _, false) => CSRReadWrite
+
+template: A1-v1
+
+card:
+  key: csrrsi
+  verified: null
+
+decode:
+  extension: Zicsr                      # Sail encdec when currentlyEnabled(Ext_Zicsr)
+  xlen: null
+  mnemonic: csrrsi
+  aliases:                              # UDB pseudoinstructions（本地 0a3a1e2 已核）
+    - {name: csrsi, when: "rd=x0"}
+  encoding:
+    pattern: "............ ..... 110 ..... 1110011"   # csr @ imm @ 0b1 @ encdec_csrop(CSRRS)=10 @ rd @ 1110011
+    fields: {csr: "20:12", uimm: "15:5", rd: "7:5"}
+    assembly: "rd, csr, uimm"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}   # UDB access（本地 0a3a1e2）；原卡 {s: sometimes, u: sometimes, vs: sometimes, vu: sometimes}
+  conditions:
+    - {when: "check_CSR_result(csr, cur_privilege, access_type) == CSR_Illegal()", params: [cur_privilege, csr, access_type], raise: Illegal_Instruction}
+    - {when: "check_CSR_result(csr, cur_privilege, access_type) == CSR_Virtual()", params: [cur_privilege, csr, access_type], raise: Virtual_Instruction}
+      # 以上两条是 doCSR 的 match 分支按 §2.3 第 6 条拆开；== 是拆开后的写法，Sail 原话是 match 臂
+      # check_CSR_result 内部按 CSR 地址位 [9:8] 判特权级、[11:10] 判只读、再查 CSR 是否存在 —— 全部 208 条里
+      # 只有这 6 张用它，且条件依赖 csr 操作数的运行时值。归 C（哪些 CSR 在哪个特权级可访问是 C 卡的 access 行）
+    # 填不进⑨（扩展检查）：not(ext_check_CSR(csr, cur_privilege, access_type)) → Ext_CSR_Check_Failure()。
+    #   raise 枚举只有 Illegal / Virtual，它进不来；cause 由扩展给，outcome 也写不出。同 jal 卡的 ext_control_check_pc
+    # 填不进⑫（依赖层冲突 · 归 A 自身）：write_CSR(csr, write_val) 返回 Err(()) → Illegal_Instruction()。
+    #   按 方案 §2.1「raise 种类」它该进本步；但它依赖 write_val，那是 Calculate（step 4）的 out，
+    #   本步是 step 2 —— 与 §2.1「第 N 步只能引用前面步骤的 out」正面冲突。这是 §2.3 第 6 条要求上报的情况。
+    #   本卡两边都没写，等裁决。见 缺口清单.md
+
+operand_fetch:
+  operands:
+    - {type: imm, id: uimm}
+    - {type: csr, id: csr}
+  implicit_reads: []                    # CSR 本身是显式操作数（type: csr）；mip/sip 特例读的平台中断线见 calculate
+
+calculate:
+  - {out: access_type, width: null, op: "csr_access_type(op, rd == zreg, imm == zeros())"}   # 枚举；op = CSRRS，本指令落 uimm=0 → CSRRead，否则 CSRReadWrite
+  - {out: rs1_val, width: 64, op: "zero_extend(imm)"}                   # doCSR 形参名 rs1_val，实参 zero_extend(imm)
+  - {out: read_val, width: 64, op: "if access_type != CSRWrite then read_CSR(csr) else zeros()"}   # 纯写（rd=x0 的 csrrw）不读，避免读副作用
+  - {out: dest_val, width: 64, op: "match csr { 0x344 => read_mip(IncludePlatformInterrupts).bits, 0x144 => read_sip(IncludePlatformInterrupts).bits, _ => read_val }"}
+    # mip / sip 的 SEIP 位：写 rd 的值含平台中断线，读-改-写用的 read_val 不含
+  - {out: write_val, width: 64, op: "read_val | rs1_val"}   # match op 的 CSRRS 分支
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: dest_val}        # 两条路径都写 X(rd) = dest_val；rd=x0 丢弃
+    - {type: csr, id: csr, width: 64, value: write_val}    # 显式 CSR 写：csr 是操作数，故用 type: csr 而非 update.csr（那是隐式写）
+      # 填不进④（条件写）：这一行只在 access_type != CSRRead 时发生（uimm=0 时只读不写）。update.regs[] 无 when。
+      # 填不进⑤（视图 / 落值）：真正落进 CSR 的是 write_CSR 返回的 final_val（WARL 合法化之后），不是 write_val；
+      #   csr 指向哪个物理寄存器、哪个视图，全由运行时的 csr 字段决定。归 C
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []                        # Illegal / Virtual 由 dynamic_check 出；⑫ 那条两边都没写
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 落槽表待裁决：csr_read_callback / csr_write_callback 是模拟器回调，无架构效果，但不属于 §2.3 第 5 条四类噪音。
+  #   与 jalr 的 update_elp_state（⑧）同类问题

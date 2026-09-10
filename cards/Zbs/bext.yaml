@@ -1,0 +1,53 @@
+# bext · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zbs_insts.sail execute(ZBS_RTYPE)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zbs_insts.sail execute(ZBS_RTYPE) L94–L108
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: bext
+  verified: null
+
+decode:
+  extension: Zbs
+  xlen: null
+  mnemonic: bext
+  aliases: []
+  encoding:
+    pattern: "0100100 ..... ..... 101 ..... 0110011"
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: rs2_val, width: 64, op: "X(rs2)"}
+  - {out: mask, width: 64, op: "if xlen == 32 then zero_extend(0b1) << rs2_val[4..0] else zero_extend(0b1) << rs2_val[5..0]"}
+  - {out: result, width: 64, op: "zero_extend(bool_to_bit((rs1_val & mask) != zeros()))"}   # ZBS_RTYPE BEXT 分支
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

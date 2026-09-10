@@ -1,0 +1,50 @@
+# fmv.x.h · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/zfh_insts.sail execute(F_UN_X_TYPE_H … FMV_X_H)（803f192b）
+# extension 吸收了 Sail encdec 的 when（currentlyEnabled(Ext_F/D/Zfh…)，内含 mstatus[FS] != 0b00）—— 模板注 ⁽¹⁾ 约定，dynamic_check 不再重复
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: fmv.x.h
+  verified: null
+
+decode:
+  extension: Zfhmin
+  xlen: null
+  mnemonic: fmv.x.h
+  aliases: []
+  encoding:
+    pattern: "1110010 00000 ..... 000 ..... 1010011"
+    fields: {rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: F, id: rs1}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val_H, width: 16, op: "F(rs1)[15..0]"}   # 直接读 F，不经 NaN-box 检查
+  - {out: rd_val_X, width: 64, op: "sign_extend(rs1_val_H)"}
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: rd_val_X}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

@@ -1,0 +1,54 @@
+# hfence.vvma · 按 card.template.v1.yaml 第三稿；语义抄 Sail H/hext_insts.sail execute(HFENCE_VVMA)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/H/hext_insts.sail execute(HFENCE_VVMA) L161–L173
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: hfence.vvma
+  verified: null
+
+decode:
+  extension: H
+  xlen: null
+  mnemonic: hfence.vvma
+  aliases: []
+  encoding:
+    pattern: "0010001 ..... ..... 000 00000 1110011"
+    fields: {rs2: "20:5", rs1: "15:5"}
+    assembly: "rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}   # UDB access（本地 0a3a1e2）；原卡 {s: always, u: never, vs: never, vu: never}
+  conditions: 
+    - {when: "inVirtualPrivilege()", params: [cur_privilege], raise: Virtual_Instruction}
+    - {when: "cur_privilege == User", params: [cur_privilege], raise: Illegal_Instruction}
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: [cur_privilege, hgatp.VMID]
+
+calculate: 
+  - {out: addr, width: 64, op: "if rs1 != zreg then Some(X(rs1)) else None()"}
+  - {out: asid, width: 16, op: "if rs2 != zreg then Some(if asidlen == 0 then zeros() else zero_extend(X(rs2)[asidlen - 1 .. 0])) else None()"}
+  - {out: vmid, width: 14, op: "Some(get_vmid(VS_Stage))"}
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进②（事件 · 归「序」）：flush_TLB(asid, vmid, addr, VS_Stage) 无槽，同 sfence.vma

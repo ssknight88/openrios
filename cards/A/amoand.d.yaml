@@ -1,0 +1,73 @@
+# amoand.d · 按 card.template.v1.yaml 第三稿；语义抄 Sail A/zaamo_insts.sail execute(AMO)（803f192b），op = AMOAND · width = 8
+# Sail 定位（本地 803f192b 核对）：extensions/A/zaamo_insts.sail execute(AMO) L69–L162
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\Zaamo\amoand.d.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文（本指令相关行）：
+#   let access = Atomic(op, aq, rl, Data, Data);
+#   let vaddr : virtaddr = match get_transformed_data_addr(rs1, zeros(), access, width) { … };
+#   if not(is_aligned_addr(vaddr, width)) then { match plat_misaligned_exception(access, false) { … } };
+#   let rs2_val : bits('width * 8) = if width <= xlen_bytes then trunc(X(rs2)) else trunc(X_pair(rs2));
+#   let result : bits('width * 8) = match op { … AMOAND => rs2_val & loaded, … };
+#   （mem_write 后）if width <= xlen_bytes then X(rd) = sign_extend(loaded)
+# 剥掉：AMOCAS 分支（非本指令）· X_pair 分支（width > xlen，非本指令）· assert（断言）
+
+template: A1-v1
+
+card:
+  key: amoand.d
+  verified: null
+
+decode:
+  extension: Zaamo                      # Sail encdec when amo_encoding_valid(size, op, rs2, rd) → currentlyEnabled(Ext_Zaamo)
+  xlen: 64                              # RV64-only
+  mnemonic: amoand.d
+  aliases: []
+  encoding:
+    pattern: "01100 . . ..... ..... 011 ..... 0101111"   # encdec_amoop(AMOAND)=01100 · width_enc_wide(8)=011
+    fields: {aq: "26:1", rl: "25:1", rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs2, (rs1)"
+  overlap: []                           # rd=x0 合法、结果丢弃，不是 HINT
+  reserved: []                          # 族级 funct5 未定义值、funct3=000/001（无 Zabha）归编码空间一节
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []                    # 翻译用的 MPRV / satp 是规则参数，归内存属性
+
+calculate:
+  - {out: vaddr, width: 64, op: "X(rs1)"}              # get_transformed_data_addr(rs1, zeros(), …)，无偏移
+  - {out: rs2_val, width: 64, op: "trunc(X(rs2))"}   # width <= xlen_bytes 分支；width 64 时 trunc 为恒等
+
+memory:
+  request:
+    type: RMW
+    width: 64
+    address: vaddr
+    aq: aq
+    rl: rl
+    read: {out: loaded, width: 64}                        # mem_read 读回 vaddr 处旧值
+    modify: {out: result, width: 64, op: "rs2_val & loaded"}   # 按位与
+    write: {out: result, width: 64}                       # mem_write_value(addr, 8, result)，存回 vaddr
+  va_constraint: "is_aligned_addr(vaddr, 8)"            # Zaamo 条款（B 一条，18 条 AMO 共用）；豁免（MISALIGNED_AMO · 原子粒度 PMA）归内存属性
+  context: null                         # 有效特权级按 MPRV 取，归内存属性
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(loaded)"}   # 旧值 64 → 64，恒等；只在 mem_write Ok 后写；rd=x0 丢弃
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions:
+    - {when: "not(is_aligned_addr(vaddr, 8))", cause: [E_SAMO_Addr_Align, E_SAMO_Access_Fault], tval: vaddr}
+      # plat_misaligned_exception(access, false)：Some(AccessFault) → 7 · Some(AlignmentException) → 6 · None() → 留给 PMA
+    - {rule: "memory-attr(RMW)", cause: [E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr}
+      # 翻译 / PMA / PMP 条件归内存属性；RMW → SAMO 家族，读半边亦报 SAMO
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS   # UDB 走 raise 非 raise_precise

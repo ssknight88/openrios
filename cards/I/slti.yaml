@@ -1,0 +1,53 @@
+# slti · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(ITYPE) L158–L169（803f192b），op = RISCV_SLTI
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(ITYPE) L158–L169
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10），行号见「Sail 定位」行。原推导记录：子句行范围取自同子句样例卡 cards/I/addi.yaml；
+#        本卡 calculate.op 的表达式与 aliases 按 spec + addi.yaml 同构推得，未见 Sail 原话
+
+template: A1-v1
+
+card:
+  key: slti
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: slti
+  aliases: []                           # UDB 无 pseudoinstructions（本地 0a3a1e2 已核）
+  encoding:
+    pattern: "............ ..... 010 ..... 0010011"
+    fields: {imm: "20:s12", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, imm"
+  overlap: []                           # rd=x0 是 spec HINT 表保留形态，UDB 无 hints，归编码空间一节
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate:
+  - {out: immext, width: 64, op: "sign_extend(imm)"}   # Sail L159 同族：12 → 64 符号扩展
+  - {out: result, width: 64, op: "zero_extend(bool_to_bit(X(rs1) <_s immext))"}   # L158–L169 内 RISCV_SLTI 分支：有符号比较，结果 0/1
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: result}      # Sail L160
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

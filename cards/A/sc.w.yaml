@@ -1,0 +1,83 @@
+# sc.w · 按 card.template.v1.yaml 第三稿；语义抄 Sail A/zalrsc_insts.sail execute(STORECON)（803f192b），width = 4
+# Sail 定位（本地 803f192b 核对）：extensions/A/zalrsc_insts.sail execute(STORECON) L66–L81
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\Zalrsc\sc.w.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   function clause execute STORECON(aq, rl, rs2, rs1, width, rd) = {
+#     assert(width <= xlen_bytes);
+#     let data = X(rs2)[width * 8 - 1 .. 0];
+#     match vmem_write(rs1, zeros(), width, data, StoreConditional(aq, rl, Data), aq & rl, rl, true) {
+#       Ok(b) => {
+#         X(rd) = zero_extend(bool_bit(~(b)));
+#         cancel_reservation();
+#         RETIRE_SUCCESS
+#       },
+#       Err(e) => e,
+#     }
+#   }
+# 注意：「保留是否有效 → 存不存」的判断不在子句里，在 vmem_write 内按 StoreConditional 访问类型做。
+# 子句看到的只是结果 b（true = 存成功）。因此 §2.3 第 6 条预测的「memory.request 缺 when」在此**没撞上**。
+
+template: A1-v1
+
+card:
+  key: sc.w
+  verified: null
+
+decode:
+  extension: Zalrsc
+  xlen: null
+  mnemonic: sc.w
+  aliases: []
+  encoding:
+    pattern: "00011 . . ..... ..... 010 ..... 0101111"
+    fields: {aq: "26:1", rl: "25:1", rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs2, (rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate:
+  - {out: vaddr, width: 64, op: "X(rs1)"}                 # vmem_write(rs1, zeros(), …)，无偏移
+  - {out: data, width: 32, op: "X(rs2)[31 .. 0]"}      # Sail let 名 data；X(rs2)[width * 8 - 1 .. 0]
+
+memory:
+  request:
+    type: SC
+    width: 32
+    address: vaddr
+    aq: aq
+    rl: rl
+    read: null
+    modify: null
+    write: {out: data, width: 32}       # 访问类型 StoreConditional(aq, rl, Data)；是否真的落盘由内存子系统按保留集定
+  va_constraint: "is_aligned_addr(vaddr, 4)"   # 检查在 sys/vmem_utils.sail vmem_write_addr L221，res = true → plat_misaligned_access.lrsc（L35）；同 lr
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "zero_extend(bool_bit(~(b)))"}   # b = 存成功 → rd = 0；失败 → rd = 1
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions:
+    - {rule: "memory-attr(SC)", cause: [E_SAMO_Addr_Align, E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr}
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进⑪（SC 成功位无定义槽 · 归 A 自身）：update.regs 的 value 引用了 b，而 b 在本卡任何地方都没有定义——
+  #   它是 vmem_write 的返回值 Ok(b)，既不是 Calculate 的产物、也不是 read 回来的数据。memory.request 只有
+  #   read/modify/write 三个出口，没有「写操作返回一个值」的出口。本卡故意不定义 b，让 out 名闭合（方案 §4.2
+  #   第 4 项）在这张卡上红掉，作为缺口的机器可见信号。最便宜的候选是把 b 挂到 read: {out: b, width: 1}，
+  #   但那是把「读回值」当「写结果」用，语义不对，由 review 定。方案.md:135 §3.3 点名的「SC 成功位」就是它
+  # 填不进⑩（保留集）：cancel_reservation() 无槽，见 lr 卡尾

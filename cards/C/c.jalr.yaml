@@ -1,0 +1,60 @@
+# c.jalr · 按 card.template.v1.yaml 第三稿；语义抄 Sail（803f192b），本体：ExecuteAs(JALR(zeros(), rs1, ra))
+# Sail 定位（本地 803f192b 核对）：extensions/C/zca_insts.sail execute(C_JALR) L501–L502
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\C\c.jalr.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+
+template: A1-v1
+
+card:
+  key: c.jalr
+  verified: null
+
+decode:
+  extension: Zca
+  xlen: null
+  mnemonic: c.jalr
+  aliases: []
+  encoding:
+    pattern: "100 1 ..... 00000 10"
+    fields: {rs1: "7:5"}
+    assembly: "rs1"
+    # 填不进⑯（16 位编码记法 · 归 A 自身）：编码格式.md 只定义了 32 位记法；本卡按同一记法写 16 字符图案。
+    #   3 位寄存器字段（rd' rs1' rs2'）经 creg2reg_idx 映到 x8..x15（f 寄存器同理映 f8..f15），记法里没有「+8」的写法，此处只在注释说明
+  overlap: 
+    - {when: "rs1=x0", is: inst, of: c.ebreak}
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+  implicit_reads: [PC]
+
+calculate:
+  - {out: link_address, width: 64, op: "get_next_pc()"}
+  - {out: target, width: 64, op: "X(rs1) + sign_extend(imm)"}   # 本体 JALR let target；imm = zeros()
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: ra, width: 64, value: link_address}   # 本体 JALR：rd = ra
+  csr: []
+  next_pc: "[target with 0 = 0b0]"
+
+outcome:
+  retire: normal
+  exceptions:
+    - {when: "bit_to_bool(target[1]) & not(currentlyEnabled(Ext_Zca))", cause: E_Fetch_Addr_Align, tval: "[target with 0 = 0b0]"}
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进⑭（指向本体 · 归 A 自身）：Sail 子句是 ExecuteAs(本体)，方案 §2.1 说「压缩指令只有 Decode + 指向本体」，
+  #   但模板没有「指向本体」的键。本卡实验做法：Decode 全填，其余六步按本体展开、操作数代换，本体见卡头。
+  #   代价是与本体卡重复；好处是列查询（方案 §1.1）在本卡上仍能工作。要不要开 decode.expands_to 之类的键，review 定
+  # 填不进⑮（固定寄存器 · 归 A 自身）：rd 是 ra、imm 是 zeros()，都不在编码里。operands[].id 必须是 encoding.fields 的名，固定寄存器（sp · ra · x0）不是字段；本卡update.regs 的 id 直接写 ra
+  # 填不进⑧⑨：本体 jalr_seq 的 update_elp_state(rs1) 与 ext_control_check_pc，同 cards/I/jalr.yaml

@@ -1,0 +1,53 @@
+# rorw · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zbb_insts.sail execute(ZBB_RTYPEW)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zbb_insts.sail execute(ZBB_RTYPEW) L67–L76
+# UDB data_independent_timing: true（Zkt），无槽位
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: rorw
+  verified: null
+
+decode:
+  extension: Zbb
+  xlen: 64
+  mnemonic: rorw
+  aliases: []
+  encoding:
+    pattern: "0110000 ..... ..... 101 ..... 0111011"
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val, width: 32, op: "X(rs1)[31..0]"}
+  - {out: shamt, width: 5, op: "X(rs2)[4..0]"}
+  - {out: result, width: 32, op: "rs1_val >>> shamt"}   # ZBB_RTYPEW RORW 分支
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: "sign_extend(result)"}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

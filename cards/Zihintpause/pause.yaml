@@ -1,0 +1,48 @@
+# pause · 按 card.template.v1.yaml 第三稿；语义抄 Sail Zihintpause/zihintpause_insts.sail execute(PAUSE)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/Zihintpause/zihintpause_insts.sail execute(PAUSE) L19–L19
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: pause
+  verified: null
+
+decode:
+  extension: Zihintpause
+  xlen: null
+  mnemonic: pause
+  aliases: []
+  encoding:
+    pattern: "0000 0001 0000 00000 000 00000 0001111"
+    fields: {}
+    assembly: ""
+  overlap: 
+    - {when: "always", is: inst, of: fence}   # fence fm=0000, pred=0000, succ=0001, rs1=x0, rd=x0 的编码；cards/_undecided/I/fence.yaml 的 overlap 反向指到本卡
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: []
+  implicit_reads: []
+
+calculate: []
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进②（事件 · 归「序」）：原文 execute PAUSE() = RETIRE_SUCCESS；spec 语义「提示自旋等待」无架构效果

@@ -1,0 +1,51 @@
+# orc.b · 按 card.template.v1.yaml 第三稿；语义抄 Sail B/zbb_insts.sail execute(ORCB)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/B/zbb_insts.sail execute(ORCB) L235–L244
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: orc.b
+  verified: null
+
+decode:
+  extension: Zbb
+  xlen: null
+  mnemonic: orc.b
+  aliases: []
+  encoding:
+    pattern: "001010000111 ..... 101 ..... 0010011"
+    fields: {rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+  implicit_reads: []
+
+calculate: 
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: result, width: 64, op: "foreach (i from 0 to (xlen - 8) by 8) result[(i + 7) .. i] = if rs1_val[(i + 7) .. i] == zeros() then 0x00 else 0xFF"}
+    # 填不进⑲（循环 · 归 A 自身）：原文是 var result = zeros(); foreach … 逐字节赋值 —— 命令式循环，{out, width, op} 装不下「一个 out 被写 8 次」。本卡把循环体整句放进 op，是权宜
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: 
+    - {type: X, id: rd, width: 64, value: result}
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

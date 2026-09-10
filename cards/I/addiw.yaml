@@ -1,0 +1,54 @@
+# addiw · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(ADDIW) L344–L348（803f192b），op = ADDIW
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(ADDIW) L344–L348
+# 语义已按本地 _golden/sail-riscv（803f192b）原文核对（2026-09-10）。子句原文：
+#   let result = X(rs1) + sign_extend(imm);
+#   X(rd) = sign_extend(result[31..0]);
+
+template: A1-v1
+
+card:
+  key: addiw
+  verified: null
+
+decode:
+  extension: I
+  xlen: 64                              # RV64-only
+  mnemonic: addiw
+  aliases:                              # UDB pseudoinstructions（本地 0a3a1e2 已核）
+    - {name: sext.w, when: "imm=0"}
+  encoding:
+    pattern: "............ ..... 000 ..... 0011011"
+    fields: {imm: "20:s12", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, imm"
+  overlap: []                           # rd=x0 是 spec HINT 表保留形态
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate:
+  - {out: result, width: 64, op: "X(rs1) + sign_extend(imm)"}   # Sail let result（xlenbits，64 位加）；写回前取 [31..0]
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(result[31..0])"}   # 取低 32 再符号扩展
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null

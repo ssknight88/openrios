@@ -1,0 +1,79 @@
+# fsw · 按 card.template.v1.yaml 第三稿；语义抄 Sail FD/fext_insts.sail execute(STORE_FP)（803f192b），width = 4
+# Sail 定位（本地 803f192b 核对）：extensions/FD/fext_insts.sail execute(STORE_FP) L316–L329
+# 语义已核（2026-09-10，按 803f192b 取公开仓库原文）；行号见「Sail 定位」行（本地 _golden 803f192b 核对）
+# UDB 0a3a1e2 已核（本地 _golden，inst\F\fsw.yaml）：aliases · hints · access 已按其填写；definedBy · encoding 已交叉核对
+#
+# 子句原文：
+#   function clause execute STORE_FP(imm, rs2, rs1, width) = {
+#     assert(width <= flen_bytes);
+#     let offset : xlenbits = sign_extend(imm);
+#     let data = F(rs2)[width * 8 - 1 ..  0];
+#     match vmem_write(rs1, offset, width, data, Store(Data), false, false, false) {
+#       Ok(true)  => RETIRE_SUCCESS,
+#       Ok(false) => internal_error(__FILE__, __LINE__, "store got false from vmem_write"),
+#       Err(e)    => e,
+#     }
+#   }
+
+template: A1-v1
+
+card:
+  key: fsw
+  verified: null
+
+decode:
+  extension: F
+  # extension 吸收了 Sail encdec 的 when haveSingleFPU()/haveDoubleFPU() = currentlyEnabled(Ext_F/D) | currentlyEnabled(Ext_Zfinx)，
+  # 而 currentlyEnabled(Ext_F) = hartSupports(Ext_F) & misa[F] == 0b1 & currentlyEnabled(Ext_Zicsr) & mstatus[FS] != 0b00 &
+  #   (if inVirtualPrivilege() then vsstatus[FS] != 0b00 else true)
+  # 即「FS = Off → 非法」藏在 extension 这一格里（模板注 ⁽¹⁾ 的约定），本卡 dynamic_check 不再重复。Zfinx 不在本轮范围
+  xlen: null
+  mnemonic: fsw
+  aliases: []
+  encoding:
+    pattern: "....... ..... ..... 010 ..... 0100111"
+    fields: {imm: "25:s7 7:5", rs2: "20:5", rs1: "15:5"}
+    assembly: "rs2, imm(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: F, id: rs2}
+    - {type: imm, id: imm}
+  implicit_reads: []
+
+calculate:
+  - {out: offset, width: 64, op: "sign_extend(imm)"}
+  - {out: vaddr, width: 64, op: "X(rs1) + offset"}
+  - {out: data, width: 32, op: "F(rs2)[31 .. 0]"}   # 直接读 F 低 32 位，不经 F_or_X（不做 NaN-box 检查）
+
+memory:
+  request:
+    type: W
+    width: 32
+    address: vaddr
+    aq: null
+    rl: null
+    read: null
+    modify: null
+    write: {out: data, width: 32}
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions:
+    - {rule: "memory-attr(W)", cause: [E_SAMO_Addr_Align, E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr}
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # Ok(false) 分支是 internal_error，按 §2.3 第 5 条第 2 类包装剥掉

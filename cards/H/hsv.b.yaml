@@ -1,0 +1,66 @@
+# hsv.b · 按 card.template.v1.yaml 第三稿；语义抄 Sail H/hext_insts.sail execute(HSV)（803f192b）
+# 方案.md:142 §3.3 点名的「访问上下文」：翻译用的特权级不是 cur_privilege 而是 hstatus[SPVP] 派生的 eff_priv（VS 或 VU），地址还要过 transform_hlsv_address —— 落 memory.context
+# 异常走 hlsv_exception_context(e, va) = make_exception_context(e, va, true, None())：第三参 true 标「来自 HLV/HSV」，影响 htval/htinst 的写法 —— 模板 exceptions[] 无此槽
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: hsv.b
+  verified: null
+
+decode:
+  extension: H
+  xlen: null
+  mnemonic: hsv.b
+  aliases: []
+  encoding:
+    pattern: "0110001 ..... ..... 100 00000 1110011"
+    fields: {rs2: "20:5", rs1: "15:5"}
+    assembly: "rs2, (rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}   # UDB access（本地 0a3a1e2）；原卡 {s: always, u: sometimes, vs: never, vu: never}
+  conditions: 
+    - {when: "inVirtualPrivilege()", params: [cur_privilege], raise: Virtual_Instruction}
+    - {when: "cur_privilege == User & hstatus[HU] == 0b0", params: [cur_privilege, hstatus.HU], raise: Illegal_Instruction}
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: [cur_privilege, hstatus.SPVP]
+
+calculate: 
+  - {out: access, width: null, op: "Store(Data)"}
+  - {out: eff_priv, width: null, op: "privLevel_bits(zero_extend(hstatus[SPVP]), 0b1)"}
+  - {out: vaddr, width: 64, op: "X(rs1)"}
+  - {out: data, width: 8, op: "X(rs2)[8 * width - 1 .. 0]"}
+
+memory:
+  request:
+    type: W
+    width: 8
+    address: vaddr
+    aq: null
+    rl: null
+    read: null
+    modify: null
+    write: {out: data, width: 8}
+  va_constraint: null
+  context: "eff_priv = privLevel_bits(zero_extend(hstatus[SPVP]), 0b1); vaddr = transform_hlsv_address(vaddr, access, eff_priv)"
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: 
+    - {when: "not(is_aligned_addr(vaddr, width))", cause: [E_SAMO_Access_Fault, E_SAMO_Addr_Align], tval: vaddr}
+    - {rule: "memory-attr(W)", cause: [E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: "offset_virtaddr_by(vaddr, paddr, exc_paddr)"}   # 跨页错时 tval 是出错处的 VA，不是起始 VA
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进⑨：Ext_DataAddr_Check_Failure

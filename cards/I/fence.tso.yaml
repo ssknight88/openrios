@@ -1,0 +1,50 @@
+# fence.tso · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(FENCE_TSO)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(FENCE_TSO) L441–L444
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: fence.tso
+  verified: null
+
+decode:
+  extension: I
+  xlen: null
+  mnemonic: fence.tso
+  aliases: []
+  encoding:
+    pattern: "1000 0011 0011 00000 000 00000 0001111"
+    fields: {}
+    # Sail encdec 把 rs1 / rd 固定为 00000；UDB 0a3a1e2 把它们当变量（match 里是 -----）。spec：保留字段「基础实现应忽略、软件应写零」。
+    # 本卡按 Sail 原话固定；rs1/rd ≠ 0 的编码按 UDB 仍是 fence.tso、按 Sail 会落到 FENCE 通用子句 —— 两个 golden 在此不一致，已登记
+    assembly: ""
+  overlap: 
+    - {when: "always", is: inst, of: fence}   # fence fm=1000, pred=0011, succ=0011 的编码；Sail 注释「FENCE_TSO and PAUSE are encoded as FENCE so they must come first」
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: []
+  implicit_reads: []
+
+calculate: []
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进②（事件 · 归「序」）：原文 sail_barrier(Barrier_RISCV_tso); RETIRE_SUCCESS —— 屏障无槽，同 cards/_undecided/I/fence.yaml

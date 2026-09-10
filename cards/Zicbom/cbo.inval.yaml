@@ -1,0 +1,59 @@
+# cbo.inval · 按 card.template.v1.yaml 第三稿；语义抄 Sail Zicbom/zicbom_insts.sail execute(ZICBOM(CBO_INVAL) → cbop_priv_check → process_clean_inval)（803f192b）
+# 填不进⑳（缓存块访问 · 归 A 自身）：访问类型是 CacheAccess(CB_*)，粒度是 cache_block_size = 2 ^ plat_cache_block_size_exp（UDB param CACHE_BLOCK_SIZE，RVA23 由 Zic64b 定 64 B）。memory.request.type 枚举 R|W|RMW|LR|SC 装不下，width 是参数不是常数
+# 填不进㉑（按状态改操作 · 归 A 自身）：CBIE = 01 时本指令的行为从 inval 变成 flush。七步里没有「同一条指令按 CSR 值切换语义」的槽 —— calculate.access 的 cbop 只能写成变量
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: cbo.inval
+  verified: null
+
+decode:
+  extension: Zicbom
+  xlen: null
+  mnemonic: cbo.inval
+  aliases: []
+  encoding:
+    pattern: "000000000000 ..... 010 00000 0001111"
+    fields: {rs1: "15:5"}
+    assembly: "(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: sometimes, u: sometimes, vs: sometimes, vu: sometimes}
+  conditions: 
+    - {when: "(cur_privilege != Machine & mCBIE == CBIE_ILLEGAL) | (cur_privilege == User & sCBIE == CBIE_ILLEGAL)", params: [cur_privilege, menvcfg.CBIE, senvcfg.CBIE], raise: Illegal_Instruction}
+    - {when: "(cur_privilege == VirtualSupervisor & hCBIE == CBIE_ILLEGAL) | (cur_privilege == VirtualUser & (hCBIE == CBIE_ILLEGAL | sCBIE == CBIE_ILLEGAL))", params: [cur_privilege, henvcfg.CBIE, senvcfg.CBIE], raise: Virtual_Instruction}
+      # cbop_priv_check（zicbom_insts.sail）：mCBIE/sCBIE/hCBIE = encdec_cbie(menvcfg/senvcfg/henvcfg[CBIE])。第三种结果 CBOP_INVAL_FLUSH（CBIE = 01）把 inval 降级成 flush —— 不是异常，是**改操作**，conditions 装不下
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+  implicit_reads: [cur_privilege]
+
+calculate: 
+  - {out: access, width: null, op: "CacheAccess(CB_manage(cbop))"}   # cbop = CBO_INVAL 或被 CBIE 降级为 CBO_FLUSH，见 conditions 注
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: cache_block_size, width: null, op: "2 ^ plat_cache_block_size_exp"}
+  - {out: negative_offset, width: 64, op: "(rs1_val & ~(zero_extend(ones(plat_cache_block_size_exp)))) - rs1_val"}   # 对齐到块起始的负偏移
+  - {out: eff_priv, width: null, op: "effectivePrivilege(access, mstatus, cur_privilege)"}
+  - {out: vaddr_for_error, width: 64, op: "vaddr - negative_offset"}   # 报错用原地址，不用块起始
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: 
+    - {rule: "memory-attr(CacheAccess)", cause: [E_Load_Access_Fault, E_Load_Page_Fault, E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: vaddr_for_error}
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # 填不进⑨：Ext_DataAddr_Check_Failure

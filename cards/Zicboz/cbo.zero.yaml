@@ -1,0 +1,73 @@
+# cbo.zero · 按 card.template.v1.yaml 第三稿；语义抄 Sail Zicboz/zicboz_insts.sail execute(ZICBOZ)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/Zicboz/zicboz_insts.sail execute(ZICBOZ) L24–L76
+# 填不进⑳（缓存块访问 · 归 A 自身）：访问类型是 CacheAccess(CB_*)，粒度是 cache_block_size = 2 ^ plat_cache_block_size_exp（UDB param CACHE_BLOCK_SIZE，RVA23 由 Zic64b 定 64 B）。memory.request.type 枚举 R|W|RMW|LR|SC 装不下，width 是参数不是常数
+# width 512 = Zic64b 的 64 B；Sail 里是 cache_block_size 变量，UDB param CACHE_BLOCK_SIZE —— 写死 512 是按 RVA23 实例化，不是原话
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: cbo.zero
+  verified: null
+
+decode:
+  extension: Zicboz
+  xlen: null
+  mnemonic: cbo.zero
+  aliases: []
+  encoding:
+    pattern: "000000000100 ..... 010 00000 0001111"
+    fields: {rs1: "15:5"}
+    assembly: "(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: sometimes, u: sometimes, vs: sometimes, vu: sometimes}
+  conditions: 
+    - {when: "cur_privilege == Supervisor & menvcfg[CBZE] == 0b0", params: [cur_privilege, menvcfg.CBZE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == User & not(menvcfg[CBZE] == 0b1 & (not(currentlyEnabled(Ext_S)) | senvcfg[CBZE] == 0b1))", params: [cur_privilege, menvcfg.CBZE, senvcfg.CBZE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualSupervisor & menvcfg[CBZE] == 0b0", params: [cur_privilege, menvcfg.CBZE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualSupervisor & henvcfg[CBZE] == 0b0", params: [cur_privilege, henvcfg.CBZE], raise: Virtual_Instruction}
+    - {when: "cur_privilege == VirtualUser & menvcfg[CBZE] == 0b0", params: [cur_privilege, menvcfg.CBZE], raise: Illegal_Instruction}
+    - {when: "cur_privilege == VirtualUser & (henvcfg[CBZE] == 0b0 | senvcfg[CBZE] == 0b0)", params: [cur_privilege, henvcfg.CBZE, senvcfg.CBZE], raise: Virtual_Instruction}
+      # 以上是 feature_enabled_for_priv(cur_privilege, menvcfg[CBZE], read_senvcfg()[CBZE], read_henvcfg()[CBZE])（core/sys_regs.sail L1188）按 §2.3 第 6 条拆的 match 臂；Machine 恒 ENABLED
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+  implicit_reads: [cur_privilege]
+
+calculate: 
+  - {out: access, width: null, op: "CacheAccess(CB_zero())"}
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: cache_block_size, width: null, op: "2 ^ plat_cache_block_size_exp"}
+  - {out: negative_offset, width: 64, op: "(rs1_val & ~(zero_extend(ones(plat_cache_block_size_exp)))) - rs1_val"}   # 对齐到块起始的负偏移
+  - {out: eff_priv, width: null, op: "effectivePrivilege(access, mstatus, cur_privilege)"}
+  - {out: cache_block_addr, width: 64, op: "vaddr"}   # get_transformed_data_addr(rs1, negative_offset, …) 返回的已是块起始
+
+memory:
+  request:
+    type: W
+    width: 512
+    address: cache_block_addr
+    aq: null
+    rl: null
+    read: null
+    modify: null
+    write: {out: zeros, width: 512}
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: 
+    - {rule: "memory-attr(W)", cause: [E_SAMO_Access_Fault, E_SAMO_Page_Fault], tval: "vaddr - negative_offset"}   # trap({e with excinfo = bits_of(vaddr - negative_offset)})：报原地址
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS
+  # mem_write_value(paddr, cache_block_size, zeros(), …)：写的值是 zeros()，卡上 write.out 写 zeros 是借名（Sail 无 let）
+  # 填不进⑨：Ext_DataAddr_Check_Failure

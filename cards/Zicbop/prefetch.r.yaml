@@ -1,0 +1,58 @@
+# prefetch.r · 按 card.template.v1.yaml 第三稿；语义抄 Sail Zicbop/zicbop_insts.sail execute(ZICBOP)（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/Zicbop/zicbop_insts.sail execute(ZICBOP) L36–L64
+# 填不进⑳（缓存块访问 · 归 A 自身）：访问类型是 CacheAccess(CB_*)，粒度是 cache_block_size = 2 ^ plat_cache_block_size_exp（UDB param CACHE_BLOCK_SIZE，RVA23 由 Zic64b 定 64 B）。memory.request.type 枚举 R|W|RMW|LR|SC 装不下，width 是参数不是常数
+# HINT：翻译失败、权限失败一律 no-op（原文三处「No access to cache; no-op」），永不抛异常
+# UDB 0a3a1e2 已核（本地 _golden）：definedBy · encoding.match · variables 逐位交叉核对；aliases · hints · access 按其填写
+
+template: A1-v1
+
+card:
+  key: prefetch.r
+  verified: null
+
+decode:
+  extension: Zicbop
+  xlen: null
+  mnemonic: prefetch.r
+  aliases: []
+  encoding:
+    pattern: "....... 00001 ..... 110 00000 0010011"
+    fields: {offset: "25:s7 <<5", rs1: "15:5"}
+    assembly: "offset(rs1)"
+  overlap: []
+  reserved: []
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands: 
+    - {type: X, id: rs1}
+    - {type: imm, id: offset}
+  implicit_reads: [cur_privilege]
+
+calculate: 
+  - {out: rs1_val, width: 64, op: "X(rs1)"}
+  - {out: cache_block_size, width: null, op: "2 ^ plat_cache_block_size_exp"}
+  - {out: addr, width: 64, op: "rs1_val + sign_extend(offset)"}
+  - {out: cache_block_addr, width: 64, op: "addr & ~(zero_extend(ones(plat_cache_block_size_exp)))"}
+  - {out: offset, width: 64, op: "cache_block_addr - rs1_val"}   # 遮蔽同名编码字段 —— 填不进⑬
+  - {out: access, width: null, op: "CacheAccess(CB_prefetch(PREFETCH_R))"}
+  - {out: eff_priv, width: null, op: "effectivePrivilege(access, mstatus, cur_privilege)"}
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs: []
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
+  # 填不进②（事件 · 归「序」）：预取是对缓存的提示，Sail 模型无缓存，全部分支落到 ()；卡上 memory.request: null、exceptions: []

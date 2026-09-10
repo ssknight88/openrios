@@ -1,0 +1,52 @@
+# addw · 按 card.template.v1.yaml 第三稿；语义抄 Sail I/base_insts.sail execute(RTYPEW) L374–L386（803f192b）
+# Sail 定位（本地 803f192b 核对）：extensions/I/base_insts.sail execute(RTYPEW) L374–L386
+
+template: A1-v1
+
+card:
+  key: addw
+  verified: null
+
+decode:
+  extension: I
+  xlen: 64                              # RV64-only；UDB definedBy.allOf [xlen: 64, I]
+  mnemonic: addw
+  aliases: []
+  encoding:
+    pattern: "0000000 ..... ..... 000 ..... 0111011"   # Sail L357
+    fields: {rs2: "20:5", rs1: "15:5", rd: "7:5"}
+    assembly: "rd, rs1, rs2"
+  overlap: []                           # rd=x0 是 spec HINT 表保留形态，UDB 无 hints，归编码空间一节
+  reserved: []
+  # UDB 另有 data_independent_timing: true（Zkt），无槽位；动态 UXL 下的合法性 UDB 无落点
+
+dynamic_check:
+  access: {s: always, u: always, vs: always, vu: always}
+  conditions: []
+
+operand_fetch:
+  operands:
+    - {type: X, id: rs1}
+    - {type: X, id: rs2}
+  implicit_reads: []
+
+calculate:
+  - {out: rs1_val, width: 32, op: "X(rs1)[31..0]"}     # Sail L375
+  - {out: rs2_val, width: 32, op: "X(rs2)[31..0]"}     # Sail L376
+  - {out: result, width: 32, op: "rs1_val + rs2_val"}  # Sail L378：32 位模加
+
+memory:
+  request: null
+  va_constraint: null
+  context: null
+
+update:
+  regs:
+    - {type: X, id: rd, width: 64, value: "sign_extend(result)"}   # Sail L384：32 → 64
+  csr: []
+  next_pc: seq
+
+outcome:
+  retire: normal
+  exceptions: []
+  precision: null
