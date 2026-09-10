@@ -60,6 +60,16 @@ Level 1 是当前唯一启用的 logging 等级，仅观察 commit 阶段的最�
 
 每个 level 应只启用对该轮问题有诊断价值的观察面。不得默认让所有测试在所有 level 打印全部内部信号。
 
+Level 2 观测点主要服务于对数据通路的还原。在以下五个 节点 / 接口 提取在流水线中不同阶段的 payload：
+
+- FE-BE interface 的 payload【ISA_model 和 DUT 均提取，之后对比】；
+- decode 之后的payload【ISA_model 和 DUT 均提取】；
+- 进入 FU 之前的 payload【只从 DUT 提取，不和 ISA_model 对比】；
+- 出 FU 之后的 payload 【ISA_model 和 DUT 均提取】（区别于 commit 时的结果，用于排查 Completion SCB 中控制信号对 DUT 指令结果造成的 mismatch）；
+- BE-LSU interface 的 payload【ISA_model 和 DUT 均提取】；
+
+注：进入 FU 之前的 payload 仅提供给 AI debug 使用，不参与 COSIM 过程。
+
 ### 3.3 暂定参数与待细化项
 
 以下控制参数暂定用于当前草稿，后续可根据实际 debug 经验调整：
