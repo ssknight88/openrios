@@ -1,0 +1,112 @@
+# A1 card · YAML 载体（proposal，2026-09-09，第三稿：语义抄 Sail）
+# 项 = RVA23 Implementation Check#概念-1 template v1 的七步逐项；注号 ⁽ⁿ⁾ 对应概念-1 的「注」
+#
+# 填写规则
+#   1. 每个键都在。不适用 → 标量 null / 列表 []，不删键（无隐式空格）
+#   2. 语义槽位抄 Sail 原话（calculate.op · memory.read/modify/write · update.value · conditions.when · exceptions.when · next_pc）
+#      · out 名 = Sail 的 let 名；Sail 无 let、直接 X(rd) = … 的，out 用 result
+#      · width = Sail 类型按 RV64 实例化：xlenbits → 64，bits('width * 8) → 具体位数；非位串 → null
+#      · 寄存器 / 立即数用 Sail 名 rs1 rs2 rd imm（UDB 的 xs1 xs2 xd 一一对应）；arch state 用 Sail 名 PC · cur_privilege · mstatus[TVM]
+#      · 剥掉 Sail 的接口噪音：Ok/Err 匹配 · assert · 读序调整（issue #1761）· get_transformed_data_addr 包装
+#   3. 卡内引用 out 名；注释里 Sail L<n> 指 sail-riscv 803f192b 的行号
+#   4. 人读备注写 YAML 注释；Sail 名撞 YAML 1.1 保留字（off · on · yes · no）时加引号，如 out: "off"
+#
+# 来源（列级，只在这里写一次）
+#   机械生成：decode.*（UDB definedBy · name · pseudoinstructions · encoding · assembly · hints · variables[].not）
+#             dynamic_check.access（UDB access，粗，只当索引）· operand_fetch.operands（UDB variables + Sail 子句参数）
+#   抄 Sail：dynamic_check.conditions · implicit_reads · calculate · memory · update · outcome.retire / exceptions
+#             cause 用 Sail ExceptionType 名（E_SAMO_Addr_Align …），编号见 core/types.sail L257；raise 用 ExecutionResult 名（Illegal_Instruction · Virtual_Instruction）
+#   UDB 独有：outcome.precision（param PRECISE_SYNCHRONOUS_EXCEPTIONS）· 编码空间的 HINT（hints）
+#
+# 待定（A1 / 概念-1，本模板不替你定）
+#   · [已关 2026-09-10] 行键：每个 mnemonic 一张卡（xlsx 一行 = 一张），aq/rl 进 encoding.fields
+#   · [已关 2026-09-10] outcome 里条件的归属：不移。dynamic_check 只收 Illegal / Virtual，其余 cause 归 outcome（方案 §2.1）
+#   · fence / TLB 失效类事件无槽位（sfence.vma 撞到：flush_TLB），撞到再加，不预开
+#   · Zkt 的 data_independent_timing 无槽位（add 撞到）
+
+# 变更记录（方案.md:155 §3.4：模板改一处，已有卡全量重检，变更记进模板头）
+#   2026-09-10 · memory.request.write：「裸 out 名」→ {out, width}
+#     改前  write: data
+#     改后  write: {out: data, width: 32}
+#     理由  同级三个键原本三种形状：read = {out, width}、modify = {out, width, op}、write = 裸 out 名。
+#           消费形状是「一个字段 × 全部指令」的列查询（方案.md:20 §1.1），拉「写回内存的位宽」这一列时，
+#           read 侧取得到、write 侧取不到 —— 位宽只能从 memory.request.width 反推，是隐式空格
+#     波及  sb · sh · sw · sd · amoadd.w 共 5 张，已随本次改动全量更新
+#     lint  待同步：键树比较需把 memory.request.write. 加进 SKIP_PREFIX（同 read. / modify.）
+#   2026-09-10 · operands[].type / regs[].type 枚举：x | f | v | imm | csr → X | F | V | imm | csr
+#     改后  {type: X, id: rs1}   {type: F, id: rs2}   {type: imm, id: rm}   {type: csr, id: csr}；压缩 3 位字段同 X / F
+#     波及  318 张全量重检
+#   2026-09-10 · 三条读法规则，不改键（方案 §2.1 / §2.3 第 6 条同步）
+#     ① 七步之间无执行顺序，只是分类格子；唯一原子性规则：任一 exception 成立 ⇒ memory.request.write
+#        与 update 全部不发生（outcome.precision 标注）。Sail 里 X(rd) = … 嵌在成功分支内的写法据此平铺，
+#        不算丢信息（jal · lw · amoadd.w 同形）
+#     ② 格子内列表有序：conditions[] · exceptions[] 先中者优先，顺序抄 Sail 判定顺序，encdec when 守卫排最前。
+#        波及 sfence.vma（第 5 条挪到第 1 条），已更新
+#     ③ if → when：控制流拆成目标槽的 when，内层条件用 & 粘外层守卫（分支卡的 "taken & …"）。暂定，
+#        撞到 when 表达不了的上报。已知三个槽没有 when：update.regs · update.csr · memory.request
+
+template: A1-v1
+
+card:
+  key: <mnemonic>                       # 行键，见待定
+  verified: null                        # 验证状态按扩展给，A3 / A4 后填；null = 未校验
+
+# ---- Decode：只看编码位能判定的 ----
+decode:
+  extension: <Ext>                      # ⁽¹⁾ 所属扩展；misa 开关按约定归此步（Sail encdec when currentlyEnabled）
+  xlen: null                            # ⁽¹⁾ null = RV32/64 都有；64 = RV64-only
+  mnemonic: <mnemonic>
+  aliases: []                           # ⁽²⁾ 每条 {name, when}，如 {name: nop, when: "rd=x0, rs1=x0, imm=0"}
+  encoding:                             # ⁽³⁾ 记法借 decodetree（_编码格式）
+    pattern: "<32 位图案：0/1 固定 · . 字段 · - 忽略>"
+    fields: {}                          # {名: "位置:宽度"}，s 前缀有符号，<<n 左移；如 {rs2: "20:5", rs1: "15:5", rd: "7:5", imm: "20:s12"}
+    assembly: "<汇编操作数序>"
+  overlap: []                           # ⁽³⁾ 编码空间重叠：每条 {when, is: hint|inst, of}，如 {when: "rd=x0, rs1=x0, rs2=x2", is: hint, of: ntl.p1}
+  reserved: []                          # ⁽³⁾ 保留编码点：每条 {when}，如 {when: "rs1=x0"}
+
+# ---- Dynamic Check：要读 arch state 才能判的合法性 ----
+dynamic_check:
+  access: {s: <>, u: <>, vs: <>, vu: <>}  # ⁽⁴⁾ always | sometimes | never
+  conditions: []                        # ⁽⁵⁾ 每条 {when, params, raise}：when 抄 Sail · params 列读到的 arch state / param（规则参数，不是数据）· raise ∈ Illegal_Instruction | Virtual_Instruction
+                                        #   列表有序：先中者优先，顺序抄 Sail 判定顺序（encdec when 守卫在 execute 之前，排最前）
+
+# ---- Operand Fetch ----
+operand_fetch:
+  operands: []                          # 每条 {type, id}，type ∈ X | F | V | imm | csr，id = encoding.fields 的名
+                                        #   type 用 Sail 的类型名（core/types.sail L32–L33 · fdext_regs.sail L56–L59 · vext_regs.sail L9）：
+                                        #   regidx（X 堆 5 位）| cregidx（X 堆压缩 3 位）| fregidx（F 堆 5 位）| cfregidx（F 堆压缩 3 位）| vregidx
+                                        #   | imm | rounding_mode（rm 字段）| csreg（Zicsr 的 csr 字段）
+  implicit_reads: []                    # ⁽⁶⁾ 只收值流进计算的 arch state：PC · cur_privilege · hgatp.VMID
+
+# ---- Calculate：Output · Operation；RMW 的运算不在此 ----
+calculate: []                           # 每条 {out, width, op}，如 {out: offset, width: 64, op: "sign_extend(imm)"}
+
+# ---- Memory：一张访存请求，read → modify → write；翻译 / PMA / PMP / misaligned 处置不在此 ⁽¹²⁾ ----
+memory:
+  request:                              # 无访存 → request: null
+    type: <R|W|RMW|LR|SC>               # ⁽⁷⁾ 访问类型
+    width: <bit>                        # ⁽⁷⁾ 位宽
+    address: <out 名>
+    aq: null                            # ⁽⁸⁾ 引 encoding.fields 的字段名，或 0/1 字面量；无此属性 → null
+    rl: null
+    read: null                          # {out, width}：读回值，交后续步骤；R / RMW / LR 有
+    modify: null                        # ⁽¹⁵⁾ {out, width, op}：RMW 才有，op 抄 Sail，如 "rs2_val + loaded"
+    write: null                         # {out, width}：要写的值；W / RMW / SC 有。与同级 read / modify 同形
+  va_constraint: null                   # ⁽¹⁰⁾ 可空。指令自身对 VA 的要求，抄 Sail，如 "is_aligned_addr(vaddr, 4)"；来源多为 B 条款
+  context: null                         # ⁽¹¹⁾ 可空。HLV / HSV / HLVX 的翻译身份；null = 默认
+
+# ---- Update：写 arch state；memory 不在此 ----
+update:
+  regs: []                              # 每条 {type, id, width, value}，type ∈ X | F | V | csr（csr = Zicsr 的显式 CSR 写，id 是 csr 字段名；隐式 CSR 写走下面的 csr:）
+                                        #   value = out 名或 Sail 表达式，如 "sign_extend(loaded)"；固定目标寄存器（c.jalr 的 ra · c.addi16sp 的 sp）id 写 Sail 常量名
+  csr: []                               # 隐式写的 CSR，每条 {csr, field, value}（概念-2 反向索引的输入）
+  next_pc: seq                          # seq = 顺序下一条 | "<表达式>" 无条件跳 | {when: <bool out>, target: <out>} 条件跳、否则 seq | null = 不 retire
+
+# ---- Outcome：Retire 或 Exception；epc / 委托 / tvec 等归异常处理流程 ⁽¹⁴⁾ ----
+outcome:
+  retire: normal                        # normal | never（如 ecall）
+  exceptions: []                        # 每条 {when | rule, cause, tval}
+                                        #   when = 指令自身条件，抄 Sail；rule = 共用规则指针（内存属性 / 翻译规则，按访问类型给 cause 家族）
+                                        #   cause 用 Sail 名（多值 = spec 留给实现选）；tval 候选值引 out 名或字面量
+                                        #   列表有序：先中者优先。任一条成立 ⇒ memory.request.write 与 update 全部不发生（方案 §2.1）
+  precision: param:PRECISE_SYNCHRONOUS_EXCEPTIONS   # ⁽¹³⁾ precise（强制）| param:PRECISE_SYNCHRONOUS_EXCEPTIONS | null（不 trap）
