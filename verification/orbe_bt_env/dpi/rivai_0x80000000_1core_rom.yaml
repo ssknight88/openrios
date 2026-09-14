@@ -11,6 +11,9 @@ isa_string: "rv64imafdc_zcb_zifencei_zicsr"
 # core_isa:                       # optional per-core ISA overrides; e.g.
 #   - { cores: [4, 8], isa: "rv64gcv" }
 #   - { core: 2,       isa: "rv64imc"  }
+csr_meta: # optional global CSR meta overrides
+  - { index: 0x300, writable: true, write_mask: 0x800006f001fe79ff, read_mask: 0x800006ff01fe79ff }
+  - { index: 0x100, writable: true, write_mask: 0x80000003018c6173, read_mask: 0x80000003018c6173 }
 
 default_start_pc: 0x1000    # reset PC unless overridden by ELF _start / explicit setCorePc
 
