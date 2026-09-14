@@ -726,6 +726,66 @@ int isa_dpi_get_commit_auto_trap_info(std::uint32_t model_core_id,
     return ISA_API_PASS;
 }
 
+int isa_dpi_get_insn_metadata(std::uint32_t model_core_id,
+                              std::uint64_t rob_idx,
+                              std::uint8_t* rd_valid,
+                              std::uint8_t* rd_is_fp,
+                              std::uint8_t* rd_write_enable,
+                              std::uint32_t* rd_idx,
+                              std::uint64_t* rd_value,
+                              std::uint8_t* recovery_kind)
+{
+    const FuncMultiCore* sim = sim_for();
+    if (sim == nullptr)
+        return ISA_API_FAIL;
+    const IsaApiInsnMetadata m =
+        funcMultiCore_getInsnMetadata(sim, model_core_id, rob_idx);
+    *rd_valid = m.rd_valid;
+    *rd_is_fp = m.rd_is_fp;
+    *rd_write_enable = m.rd_write_enable;
+    *rd_idx = m.rd_idx;
+    *rd_value = m.rd_value;
+    *recovery_kind = m.recovery_kind;
+    return ISA_API_PASS;
+}
+
+int isa_dpi_get_decode_semantic(std::uint32_t model_core_id,
+                                std::uint64_t rob_idx,
+                                std::uint8_t* rs1_valid,
+                                std::uint8_t* rs2_valid,
+                                std::uint8_t* rs3_valid,
+                                std::uint8_t* rs1_is_fp,
+                                std::uint8_t* rs2_is_fp,
+                                std::uint8_t* rs3_is_fp,
+                                std::uint32_t* rs1_idx,
+                                std::uint32_t* rs2_idx,
+                                std::uint32_t* rs3_idx,
+                                std::uint8_t* is_store,
+                                std::uint8_t* imm_valid,
+                                std::int64_t* imm_data,
+                                std::uint32_t* exe_subop)
+{
+    const FuncMultiCore* sim = sim_for();
+    if (sim == nullptr)
+        return ISA_API_FAIL;
+    const IsaApiDecodeSemantic m =
+        funcMultiCore_getDecodeSemantic(sim, model_core_id, rob_idx);
+    *rs1_valid = m.rs1_valid;
+    *rs2_valid = m.rs2_valid;
+    *rs3_valid = m.rs3_valid;
+    *rs1_is_fp = m.rs1_is_fp;
+    *rs2_is_fp = m.rs2_is_fp;
+    *rs3_is_fp = m.rs3_is_fp;
+    *rs1_idx = m.rs1_idx;
+    *rs2_idx = m.rs2_idx;
+    *rs3_idx = m.rs3_idx;
+    *is_store = m.is_store;
+    *imm_valid = m.imm_valid;
+    *imm_data = m.imm_data;
+    *exe_subop = m.exe_subop;
+    return ISA_API_PASS;
+}
+
 std::uint64_t isa_dpi_get_insn_pc(std::uint32_t model_core_id,
                                   std::uint64_t rob_idx)
 {

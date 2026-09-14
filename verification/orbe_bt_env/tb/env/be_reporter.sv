@@ -59,6 +59,8 @@ class be_reporter;
   endfunction
 
   function void print(int unsigned level, string message);
+    if ((message.len() >= 8) && (message.substr(0, 7) == "[BE_TB] "))
+      message = message.substr(8, message.len() - 1);
     case (level)
       1: l1_count++;
       2: l2_count++;
@@ -72,6 +74,29 @@ class be_reporter;
   function void warning(string message);
     warning_count++;
     $warning("[%s] [%s] %s", formatted_time(), name, message);
+  endfunction
+
+  // Non-terminating diagnostic output.  This is used when a mismatch report
+  // must emit more than one line before the simulator handles the error.
+  function void diagnostic(string message);
+    if ((message.len() >= 8) && (message.substr(0, 7) == "[BE_TB] "))
+      message = message.substr(8, message.len() - 1);
+    $display("[%s] [%s] %s", formatted_time(), name, message);
+  endfunction
+
+  // Emit the first line without triggering Verilator's immediate $error stop,
+  // then make the second line the terminal assertion/error line.
+  function void mismatch_pair(string first_line, string second_line);
+    if ((first_line.len() >= 8) && (first_line.substr(0, 7) == "[BE_TB] "))
+      first_line = first_line.substr(8, first_line.len() - 1);
+    if ((second_line.len() >= 8) && (second_line.substr(0, 7) == "[BE_TB] "))
+      second_line = second_line.substr(8, second_line.len() - 1);
+    error_count++;
+    diagnostic(first_line);
+    $display("[%s] [%s] %s", formatted_time(), name, second_line);
+    if ((error_fatal_threshold != 0) && (error_count >= error_fatal_threshold))
+      fatal($sformatf("[ERROR_LIMIT] error_count=%0d reached limit=%0d",
+                      error_count, error_fatal_threshold));
   endfunction
 
   function void error(string message);

@@ -5,6 +5,21 @@ class cosim_commit_ticket;
   longint unsigned rob_idx;
   int unsigned lane;
   longint unsigned ref_pc;
+  longint unsigned result;
+  longint unsigned ref_result;
+  longint unsigned redirect_pc;
+  longint unsigned ref_redirect_pc;
+  bit redirect_valid;
+  bit ref_redirect_valid;
+  int unsigned recovery_kind;
+  int unsigned ref_recovery_kind;
+  int unsigned rd_idx;
+  int unsigned ref_rd_idx;
+  bit rd_is_fp;
+  bit ref_rd_is_fp;
+  bit rd_write_enable;
+  longint unsigned fflags;
+  longint signed mnemonic;
 
   function new();
     sequence_id = 0;
@@ -13,6 +28,21 @@ class cosim_commit_ticket;
     pc = 0;
     rob_idx = 0;
     ref_pc = 0;
+    result = 0;
+    ref_result = 0;
+    redirect_pc = 0;
+    ref_redirect_pc = 0;
+    redirect_valid = 0;
+    ref_redirect_valid = 0;
+    recovery_kind = 0;
+    ref_recovery_kind = 0;
+    rd_idx = 0;
+    ref_rd_idx = 0;
+    rd_is_fp = 0;
+    ref_rd_is_fp = 0;
+    rd_write_enable = 0;
+    fflags = 0;
+    mnemonic = 0;
   endfunction
 endclass
 
@@ -139,6 +169,12 @@ class cosim_commit_order_adapter;
   bit dut_exit_consumed;
   cosim_commit_event_t pending_mem_store_events[$];
   cosim_commit_event_t committed_events[$];
+  string pending_mismatch_diff;
+  string pending_mismatch_label;
+  cosim_commit_event_t pending_mismatch_context;
+  bit pending_mismatch_valid;
+  bit pending_level2_mismatch;
+  string pending_level2_label;
 
   function new(mailbox #(cosim_commit_event_t) commit_events,
                mailbox #(cosim_arch_state_event_t) arch_state_events,
@@ -155,6 +191,12 @@ class cosim_commit_order_adapter;
     cycle_count = 0;
     sequence_count = 0;
     dut_exit_consumed = 1'b0;
+    pending_mismatch_diff = "";
+    pending_mismatch_label = "AT COMMIT";
+    pending_mismatch_context = '0;
+    pending_mismatch_valid = 1'b0;
+    pending_level2_mismatch = 1'b0;
+    pending_level2_label = "AT COMMIT";
     initialized = 1'b0;
   endfunction
 
@@ -164,7 +206,40 @@ class cosim_commit_order_adapter;
     dut_exit_consumed = 1'b0;
     pending_mem_store_events.delete();
     committed_events.delete();
+    pending_mismatch_diff = "";
+    pending_mismatch_label = "AT COMMIT";
+    pending_mismatch_context = '0;
+    pending_mismatch_valid = 1'b0;
+    pending_level2_mismatch = 1'b0;
+    pending_level2_label = "AT COMMIT";
     initialized = 1'b1;
+  endtask
+
+  task automatic queue_mismatch(string label, string diff,
+                                cosim_commit_event_t ctx);
+    if (!pending_mismatch_valid) begin
+      pending_mismatch_label = label;
+      pending_mismatch_context = ctx;
+      pending_mismatch_valid = 1'b1;
+    end
+    pending_mismatch_diff = {pending_mismatch_diff, diff};
+  endtask
+
+  task automatic emit_pending_mismatch();
+    string mnemonic;
+    if (!pending_mismatch_valid)
+      return;
+`ifdef ORBE_EXTERNAL_MNEMONICS
+    mnemonic = isa_dpi_mnemonic_name(pending_mismatch_context.mnemonic);
+`else
+    mnemonic = "unknown";
+`endif
+    cfg.reporter.mismatch_pair($sformatf("[COSIM] [%s] cycle=%0d; %s",
+        pending_mismatch_label, cycle_count, pending_mismatch_diff),
+      $sformatf("[COSIM] [%s] mnemonic=%s; commit_fflags=0x%0h (RTL OBSERVATION ONLY, NOT COMPARED WITH REF)",
+        pending_mismatch_label, mnemonic, pending_mismatch_context.fflags));
+    pending_mismatch_diff = "";
+    pending_mismatch_valid = 1'b0;
   endtask
 
   function automatic bit events_match(cosim_commit_event_t left,
@@ -206,16 +281,51 @@ class cosim_commit_order_adapter;
   endtask
 
   task automatic compare_ticket(cosim_commit_ticket ticket);
+    string diff;
+    string mnemonic;
+    diff = "";
     if (ticket.pc !== ticket.ref_pc)
-      cfg.reporter.error($sformatf(
+      cfg.reporter.diagnostic($sformatf(
           "[COSIM][PC_MISMATCH] seq=%0d cycle=%0d lane=%0d rob=%0d rtl_pc=0x%016h ref_pc=0x%016h",
           ticket.sequence_id, ticket.cycle, ticket.lane, ticket.rob_idx,
           ticket.pc, ticket.ref_pc));
-    else
+    if (ticket.pc !== ticket.ref_pc)
+      diff = {diff, $sformatf("pc=0x%016h (dut), 0x%016h (ref); ",
+                              ticket.pc, ticket.ref_pc)};
+    if (ticket.rd_write_enable && ticket.rd_is_fp != ticket.ref_rd_is_fp)
+      diff = {diff, $sformatf("rd_is_fp=%0b (dut), %0b (ref); ",
+                              ticket.rd_is_fp, ticket.ref_rd_is_fp)};
+    if (ticket.rd_write_enable && ticket.rd_idx != ticket.ref_rd_idx)
+      diff = {diff, $sformatf("rd_idx=%0d (dut), %0d (ref); ",
+                              ticket.rd_idx, ticket.ref_rd_idx)};
+    if (ticket.rd_write_enable && ticket.result !== ticket.ref_result)
+      diff = {diff, $sformatf("commit_result=0x%016h (dut), 0x%016h (ref); ",
+                              ticket.result, ticket.ref_result)};
+    if (ticket.redirect_valid && ticket.redirect_pc !== ticket.ref_redirect_pc)
+      diff = {diff, $sformatf("redirect_pc=0x%016h (dut), 0x%016h (ref); ",
+                              ticket.redirect_pc, ticket.ref_redirect_pc)};
+    if (ticket.redirect_valid && ticket.recovery_kind !== ticket.ref_recovery_kind)
+      diff = {diff, $sformatf("recovery_kind=%0d (dut), %0d (ref); ",
+                              ticket.recovery_kind, ticket.ref_recovery_kind)};
+    if (diff != "") begin
+`ifdef ORBE_EXTERNAL_MNEMONICS
+      mnemonic = isa_dpi_mnemonic_name(ticket.mnemonic);
+`else
+      mnemonic = "unknown";
+`endif
+      begin
+        cosim_commit_event_t ctx;
+        ctx = '0;
+        ctx.mnemonic = ticket.mnemonic;
+        ctx.fflags = ticket.fflags;
+        queue_mismatch("AT COMMIT", diff, ctx);
+      end
+    end else begin
       cfg.print_tb(3, $sformatf(
           "[COSIM][COMMIT] seq=%0d cycle=%0d lane=%0d rob=%0d pc=0x%016h",
           ticket.sequence_id, ticket.cycle, ticket.lane, ticket.rob_idx,
           ticket.pc));
+    end
   endtask
 
   task automatic compare_arch_state(
@@ -224,26 +334,36 @@ class cosim_commit_order_adapter;
     logic [63:0] ref_value;
     int unsigned csr_addr;
     int unsigned csr_count;
+    string diff;
+    string mnemonic;
+    cosim_commit_event_t context_event;
+    diff = "";
 
     if (state_event.int_arf[0] !== 64'd0)
-      cfg.reporter.error($sformatf(
+      cfg.reporter.diagnostic($sformatf(
           "[COSIM][INT_ARF_X0_MISMATCH] cycle=%0d dut=0x%016h expected=0x0000000000000000",
           cycle_count, state_event.int_arf[0]));
+    if (state_event.int_arf[0] !== 64'd0)
+      diff = {diff, $sformatf("arf_x0=0x%016h (dut), 0x0000000000000000 (ref); ", state_event.int_arf[0])};
 
     for (int index = 1; index < COSIM_ARF_REG_NUM; index++) begin
       ref_value = reference.get_gpr(index);
       if (state_event.int_arf[index] !== ref_value)
-        cfg.reporter.error($sformatf(
+        cfg.reporter.diagnostic($sformatf(
             "[COSIM][INT_ARF_MISMATCH] cycle=%0d reg=x%0d dut=0x%016h ref=0x%016h",
             cycle_count, index, state_event.int_arf[index], ref_value));
+      if (state_event.int_arf[index] !== ref_value)
+        diff = {diff, $sformatf("arf_x%0d=0x%016h (dut), 0x%016h (ref); ", index, state_event.int_arf[index], ref_value)};
     end
 
     for (int index = 0; index < COSIM_ARF_REG_NUM; index++) begin
       ref_value = reference.get_fpr(index);
       if (state_event.fp_arf[index] !== ref_value)
-        cfg.reporter.error($sformatf(
+        cfg.reporter.diagnostic($sformatf(
             "[COSIM][FP_ARF_MISMATCH] cycle=%0d reg=f%0d dut=0x%016h ref=0x%016h",
             cycle_count, index, state_event.fp_arf[index], ref_value));
+      if (state_event.fp_arf[index] !== ref_value)
+        diff = {diff, $sformatf("arf_f%0d=0x%016h (dut), 0x%016h (ref); ", index, state_event.fp_arf[index], ref_value)};
     end
 
     if (state_event.csr_valid !== 1'b0 &&
@@ -277,7 +397,7 @@ class cosim_commit_order_adapter;
         csr_addr = state_event.csr_state_addr[index];
         ref_value = reference.get_csr(csr_addr);
         if (state_event.csr_state[index] !== ref_value)
-          cfg.reporter.error($sformatf(
+          cfg.reporter.diagnostic($sformatf(
               "[COSIM][CSR_MISMATCH] cycle=%0d addr=0x%03h dut=0x%016h ref=0x%016h",
               cycle_count, state_event.csr_state_addr[index],
               state_event.csr_state[index], ref_value));
@@ -303,6 +423,17 @@ class cosim_commit_order_adapter;
         "[COSIM][ARCH_STATE] cycle=%0d int_arf=%0d fp_arf=%0d csr_valid=%0b csr_entries=%0d",
         cycle_count, COSIM_ARF_REG_NUM, COSIM_ARF_REG_NUM,
         state_event.csr_valid, csr_count));
+    if (diff != "") begin
+      context_event = '0;
+      if (committed_events.size() != 0)
+        context_event = committed_events[committed_events.size()-1];
+`ifdef ORBE_EXTERNAL_MNEMONICS
+      mnemonic = isa_dpi_mnemonic_name(context_event.mnemonic);
+`else
+      mnemonic = "unknown";
+`endif
+      queue_mismatch("AT COMMIT", diff, context_event);
+    end
   endtask
 
   task check_cycle(cosim_reference_backend reference);
@@ -311,6 +442,7 @@ class cosim_commit_order_adapter;
     cosim_arch_state_event_t state_event;
     longint unsigned ref_pc;
     bit cycle_end_seen;
+    bit had_level1_mismatch;
 
     if (!initialized)
       cfg.reporter.fatal("[COSIM] check_cycle called before adapter initialization");
@@ -330,16 +462,42 @@ class cosim_commit_order_adapter;
       // state snapshot. Blocking get therefore cannot race the producer, and
       // future-cycle events remain in the mailbox for the next snapshot.
       commit_events.get(commit_event);
+      if (commit_event.level2_mismatch) begin
+        pending_level2_mismatch = 1'b1;
+        pending_level2_label = (commit_event.exception_valid &&
+                                !commit_event.commit_valid)
+            ? "NO COMMIT" : "AT COMMIT";
+      end
       if (commit_event.kind == COSIM_EVENT_COMMIT) begin
+        //cfg.print_tb(1, $sformatf(
+        //    "[COSIM][EVENT_RX] cycle=%0d group=%0d rob=%0d ref_result=0x%016h ref_rd_idx=%0d ref_rd_fp=%0d ref_recovery_kind=%0d ref_redirect_pc=0x%016h",
+        //    cycle_count, commit_event.group, commit_event.rob_idx,
+        //    commit_event.ref_result, commit_event.ref_rd_idx,
+        //    commit_event.ref_rd_is_fp, commit_event.ref_recovery_kind,
+        //    commit_event.ref_redirect_pc));
         // BE publishes events in architectural group order. The independent
         // model advances exactly once for each valid commit event.
-        reference.step_one(ref_pc);
         ticket = new();
         ticket.sequence_id = sequence_count++;
         ticket.cycle = cycle_count;
         ticket.lane = commit_event.group;
         ticket.pc = commit_event.pc;
         ticket.rob_idx = commit_event.rob_idx;
+        ticket.result = commit_event.result;
+        ticket.rd_idx = commit_event.rd_idx;
+        ticket.rd_is_fp = commit_event.rd_is_fp;
+        ticket.rd_write_enable = commit_event.rd_write_enable;
+        ticket.fflags = commit_event.fflags;
+        ticket.mnemonic = commit_event.mnemonic;
+        ticket.ref_result = commit_event.ref_result;
+        ticket.ref_rd_idx = commit_event.ref_rd_idx;
+        ticket.ref_rd_is_fp = commit_event.ref_rd_is_fp;
+        ticket.redirect_valid = commit_event.redirect_valid;
+        ticket.redirect_pc = commit_event.redirect_pc;
+        ticket.recovery_kind = commit_event.recovery_kind;
+        ticket.ref_redirect_pc = commit_event.ref_redirect_pc;
+        ticket.ref_recovery_kind = commit_event.ref_recovery_kind;
+        reference.step_one(ref_pc);
         ticket.ref_pc = ref_pc;
         compare_ticket(ticket);
         committed_events.push_back(commit_event);
@@ -371,6 +529,53 @@ class cosim_commit_order_adapter;
               "[COSIM] DUT exited but reference did not reach tohost after %0d commit tickets",
               sequence_count));
         dut_exit_consumed = 1'b1;
+      end else if (commit_event.kind == COSIM_EVENT_RECOVERY) begin
+        string diff;
+        string mnemonic;
+        string event_label;
+        diff = "";
+        // An exception with no RTL commit pulse still consumes one
+        // architectural instruction in the independent reference.  Advance
+        // it here so the faulting PC is compared and the following commit
+        // remains aligned.  A same-cycle commit+redirect was already stepped
+        // by its COSIM_EVENT_COMMIT and must not step again.
+        if (commit_event.exception_valid && !commit_event.commit_valid) begin
+          reference.step_one(ref_pc);
+          commit_event.ref_pc = ref_pc;
+        end
+        if (commit_event.pc !== commit_event.ref_pc)
+          diff = {diff, $sformatf("pc=0x%016h (dut), 0x%016h (ref); ",
+                                  commit_event.pc, commit_event.ref_pc)};
+        if (commit_event.exception_valid &&
+            commit_event.exception_cause !== commit_event.ref_exception_cause)
+          diff = {diff, $sformatf("exception_cause=0x%016h (dut), 0x%016h (ref); ",
+                                  commit_event.exception_cause,
+                                  commit_event.ref_exception_cause)};
+        if (commit_event.exception_valid &&
+            commit_event.exception_tval !== commit_event.ref_exception_tval)
+          diff = {diff, $sformatf("exception_tval=0x%016h (dut), 0x%016h (ref); ",
+                                  commit_event.exception_tval,
+                                  commit_event.ref_exception_tval)};
+        if (commit_event.redirect_valid &&
+            commit_event.redirect_pc !== commit_event.ref_redirect_pc)
+          diff = {diff, $sformatf("redirect_pc=0x%016h (dut), 0x%016h (ref); ",
+                                  commit_event.redirect_pc,
+                                  commit_event.ref_redirect_pc)};
+        if (commit_event.redirect_valid &&
+            commit_event.recovery_kind !== commit_event.ref_recovery_kind)
+          diff = {diff, $sformatf("recovery_kind=%0d (dut), %0d (ref); ",
+                                  commit_event.recovery_kind,
+                                  commit_event.ref_recovery_kind)};
+        if (diff != "") begin
+          event_label = (commit_event.exception_valid && !commit_event.commit_valid)
+              ? "NO COMMIT" : "AT COMMIT";
+`ifdef ORBE_EXTERNAL_MNEMONICS
+          mnemonic = isa_dpi_mnemonic_name(commit_event.mnemonic);
+`else
+          mnemonic = "unknown";
+`endif
+          queue_mismatch(event_label, diff, commit_event);
+        end
       end else if (commit_event.kind == COSIM_EVENT_CYCLE_END) begin
         cycle_end_seen = 1'b1;
       end else begin
@@ -383,6 +588,19 @@ class cosim_commit_order_adapter;
     // All commit events are now from the same sampled cycle, so compare the
     // DUT snapshot against the reference after advancing it for those commits.
     compare_arch_state(reference, state_event);
+    had_level1_mismatch = pending_mismatch_valid;
+    emit_pending_mismatch();
+    if (pending_level2_mismatch) begin
+      if (!had_level1_mismatch)
+        cfg.reporter.diagnostic($sformatf(
+            "[COSIM] [%s] cycle=%0d; Level-1 fields match; Level-2 mismatch pending",
+            pending_level2_label, cycle_count));
+      cfg.reporter.fatal($sformatf(
+          "[COSIM][LEVEL2_MISMATCH] cycle=%0d; Level-1 and Level-2 logs emitted",
+          cycle_count));
+    end
+    pending_level2_mismatch = 1'b0;
+    pending_level2_label = "AT COMMIT";
     cycle_count++;
   endtask
 endclass

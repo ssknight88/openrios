@@ -231,6 +231,7 @@ base_defines=(
   -DCACHE_V3
   -DNEW_CACHE_AGENT
   -DSYNTHESIS
+  -DORBE_EXTERNAL_MNEMONICS
   -DBE_ISSUE_WIDTH="$LANES"
   "$dut_define"
 )

@@ -284,6 +284,33 @@ package isa_dpi_pkg;
     output longint unsigned trap_cause,
     output longint unsigned trap_tval
   );
+  import "DPI-C" function int isa_dpi_get_insn_metadata(
+    input int unsigned model_core_id,
+    input longint unsigned rob_idx,
+    output byte unsigned rd_valid,
+    output byte unsigned rd_is_fp,
+    output byte unsigned rd_write_enable,
+    output int unsigned rd_idx,
+    output longint unsigned rd_value,
+    output byte unsigned recovery_kind
+  );
+  import "DPI-C" function int isa_dpi_get_decode_semantic(
+    input int unsigned model_core_id,
+    input longint unsigned rob_idx,
+    output byte unsigned rs1_valid,
+    output byte unsigned rs2_valid,
+    output byte unsigned rs3_valid,
+    output byte unsigned rs1_is_fp,
+    output byte unsigned rs2_is_fp,
+    output byte unsigned rs3_is_fp,
+    output int unsigned rs1_idx,
+    output int unsigned rs2_idx,
+    output int unsigned rs3_idx,
+    output byte unsigned is_store,
+    output byte unsigned imm_valid,
+    output longint signed imm_data,
+    output int unsigned exe_subop
+  );
 
   import "DPI-C" function longint unsigned isa_dpi_get_insn_pc(
     input int unsigned model_core_id,

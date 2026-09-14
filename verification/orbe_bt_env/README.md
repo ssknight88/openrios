@@ -103,6 +103,50 @@ orbe_bt_env/tools/verilator_cosim.sh run \
 The legacy top-level `run_verilator.sh` is kept only for old mock-flow users.
 New COSIM work should use `tools/verilator_cosim.sh`.
 
+### COSIM logging level
+
+Select the COSIM checking and logging level with the `+COSIM_LEVEL` plusarg:
+
+```text
++COSIM_LEVEL=1
+  Enable Level 1 COSIM checking and logging only.
+
++COSIM_LEVEL=2
+  Enable Level 1 and Level 2 observation, comparison, and logging.
+
+No +COSIM_LEVEL argument
+  Use the testbench default, which is Level 1.
+```
+
+For reproducible runs, specify the level explicitly. With Verilator, pass the
+plusarg through `--plusargs`:
+
+```bash
+# Level 1
+orbe_bt_env/tools/verilator_cosim.sh run \
+  --dut-kind rtl_v1 \
+  --tc "$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv" \
+  --verbosity 2 \
+  --plusargs '+COSIM_LEVEL=1'
+
+# Level 2
+orbe_bt_env/tools/verilator_cosim.sh run \
+  --dut-kind rtl_v1 \
+  --tc "$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv" \
+  --verbosity 2 \
+  --plusargs '+COSIM_LEVEL=2'
+```
+
+With the VCS Makefile flow, include the same plusarg in `PLUSARGS`:
+
+```bash
+make -C verification/orbe_bt_env/sim run \
+  DUT_KIND=rtl_v1 \
+  TC=$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv \
+  COSIM_ENABLE=1 \
+  PLUSARGS='+COSIM_LEVEL=2 +VERBOSITY=2'
+```
+
 ## ISA Regression Scope
 
 The current ORBE BE/COSIM regression target is the historical 216 ELF set from

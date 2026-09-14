@@ -4,7 +4,10 @@
 
 core_num: 1
 rob_size: 16
-isa_string: "rv64gcsu_zicntr_zihpm_zabha_zacas_zawrs_zfa_zfh_zfbfmin_zfinx_zdinx_zhinx_zhinxmin_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zcb_zcf_zcmop_zcmp_zcmt_zve64d_zvfhmin_zvfh_zicond_zimop_zicbom_zicbop_zicboz_zihintpause_zihintntl_svinval_sstc_svpbmt_svnapot_svade_smnpm_ssnpm_smmpm_sscofpmf_smstateen_ssstateen_zknh_zksh_zksed_zkt_zkne_zknd_zkr"
+# isa_string: "rv64gcsu_zicntr_zihpm_zabha_zacas_zawrs_zfa_zfh_zfbfmin_zfinx_zdinx_zhinx_zhinxmin_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zcb_zcf_zcmop_zcmp_zcmt_zve64d_zvfhmin_zvfh_zicond_zimop_zicbom_zicbop_zicboz_zihintpause_zihintntl_svinval_sstc_svpbmt_svnapot_svade_smnpm_ssnpm_smmpm_sscofpmf_smstateen_ssstateen_zknh_zksh_zksed_zkt_zkne_zknd_zkr"
+isa_string: "rv64imafdc_zcb_zifencei_zicsr"
+# isa_string: "rv64gcsu_zicntr_zihpm_zabha_zacas_zawrs_zfa_zfh_zfbfmin_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zcb_zcf_zcmop_zcmp_zcmt_zicond_zimop_zicbom_zicbop_zicboz_zihintpause_zihintntl_svinval_sstc_svpbmt_svnapot_svade_smnpm_ssnpm_smmpm_sscofpmf_smstateen_ssstateen_zknh_zksh_zksed_zkt_zkne_zknd_zkr"
+# isa_string: "rv64imafdch_zba_zbb_zbs_zcb_zcmop_zfa_zfhmin_zicbom_zicbop_zicboz_zicond_zihintntl_zihintpause_zimop_svinval_zawrs"
 # core_isa:                       # optional per-core ISA overrides; e.g.
 #   - { cores: [4, 8], isa: "rv64gcv" }
 #   - { core: 2,       isa: "rv64imc"  }
