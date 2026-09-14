@@ -43,13 +43,11 @@ flowchart TD
 
 ## 3. 前提：冻结 ISA 与架构基线
 
-
 - 选择的指令集架构及扩展（例如 RV64I/M/A/F/D/C），明确测试用例。
 - 根据 ISA 和功能目标确定 BE 所需模块与 FU，例如 Buffer、Scoreboard、依赖检查、Dispatch、ISQ、INT/FP ARF、tag mapping、ALU/BRU、MUL、DIV、FPU、CSR 和 LSU 接口。
 - 冻结顶层微架构：发射/提交宽度、队列深度、tag 地址空间、资源分组、仲裁优先级、flush/recovery 和模块层次。
 - 输入：ISA 手册、功能目标和设计意图。
 - 产物：架构范围清单（其中 ISA 编码、枚举、分类信息 --> isa_pkg）、模块划分及 block diagram、全局参数设计取值（params registry）和接口时序约束。
-
 
 ## 4. 阶段 1：建立并遵守文档规范
 
@@ -131,8 +129,6 @@ isa_pkg -> schema_pkg -> params_pkg -> 各 module.sv -> 顶层连线 -> 顶层�
 本阶段产物包括 package 及 `pkg/ORDER`、模块/私有块/顶层 RTL、`TRACE.md`、`GEN-LEDGER.md`（生成过程中发现的文档缺失、歧义、ISA 内容和生成规则问题）、逐模块及全设计 lint 报告和幂等对账报告。静态检查通过不代表语义正确，完成后需将 RTL 接入已跑通验收的 COSIM 环境，进入第 8 章（阶段 5）进行测试、COSIM 比对与 debug。
 
 > **备注（有参照 RTL 时的区别）**：有参照 RTL 时，既有 RTL 和既有 package 是正式对账对象：模块本体生成前，先将微架构文档与既有 RTL 的端口声明对账；生成 package 后，再与既有 package 逐个类型比对。无参照 RTL 时不存在这些对账对象，因此端口对账移到模块生成后，改为生成 RTL 对文档的幂等对账；package 则检查生成结果自身是否齐全、可编译。若无参照 RTL 流程中存在仅供参考的历史 RTL，可以额外进行对照，但该结果只作为可选 oracle，不作为本流程的 Gate。具体流程差异见 [`GENERATION-PIPELINE.md`](GENERATION-PIPELINE.md) 第 5.0 节及其引用的 [`rtl-generation_v3.md`](spec/rtl-generation_v3.md) 第 5 节。
-
-
 
 ## 7. 阶段 4：搭建 COSIM 验证环境并跑通验收
 
