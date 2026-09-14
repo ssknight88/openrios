@@ -14,6 +14,9 @@ interface ob_cosim_if #(
     parameter int unsigned CSR_STATE_NUM = 16
 ) (input logic clk);
   import orbe_cosim_obs_pkg::*;
+  // Level-2 BE-LSU observation payloads (be_lsu_issue_pld_t et al.) come from
+  // the frozen OR-BE <-> LSU protocol package.
+  import or_be_lsu_protocol_pkg::*;
 
   logic rst_n;
 
