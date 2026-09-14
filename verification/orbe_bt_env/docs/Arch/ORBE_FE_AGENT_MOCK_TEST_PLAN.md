@@ -124,7 +124,7 @@ BE -> FE  be_fe_redirect_pld
 ```
 
 payload 类型应保持与 [ORBE_FE_AGENT_INTERFACE_SPEC_brief.md](../interface/ORBE_FE_AGENT_INTERFACE_SPEC_brief.md)
-以及 [ORBE_FE_AGENT_DESIGN_PLAN.md](ORBE_FE_AGENT_DESIGN_PLAN.md) 一致。
+以及 [ORBE_FE_AGENT_DESIGN_PLAN.md](archive/ORBE_FE_AGENT_DESIGN_PLAN.md) 一致（已归档）。
 
 ### 4.2 Verilator FE agent
 
