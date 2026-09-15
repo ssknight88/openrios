@@ -11,25 +11,30 @@ flowchart TD
     BUG -->|否| DONE([当前 bug 修复完成<br/>继续运行测试程序<br/>若有其他 bug 则重新进入 Level 1 debug])
     BUG -->|是| OBS[比较当前 level 的观察信号<br/>识别首个未对齐点和指令类型]
     OBS --> PATH[查询指令分类表确定候选微架构路径，结合微架构文档对应路径去分析可能问题点]
-    PATH --> JUDGE[形成可供人工查看的<br/>判定结果与分析]
+    PATH --> JUDGE[形成可供人工查看的<br/>判定结果与分析；<br/>必须分析是“文档问题”或“文档正确但代码实现有误”]
     JUDGE --> MODIFY[根据判定结果修改 DUT RTL]
     MODIFY --> RETEST[运行当前 level 回归测试]
     RETEST --> FIXED{bug 已消除?}
-    FIXED -->|是| DONE
+    FIXED -->|是| IMPLISSUE{该 bug 出现是否是文档<br/>正确但代码实现有误}
+    IMPLISSUE -->|是| DONE
+    IMPLISSUE -->|否| DOCISSUE[文档问题：描述有误/会产生歧义<br/>修改文档并确认与代码自洽]
+    DOCISSUE --> DONE
     FIXED -->|否且当前 level<br/>迭代次数 < n| OBS
     FIXED -->|否且达到 n| NEXT{还有下一个<br/>logging level?}
     NEXT -->|是| RUNNEXT[提升到 level k+1<br/>按该 level 观察面运行]
     RUNNEXT --> OBSN[比较当前 level 的观察信号<br/>识别未对齐点<br/>原因：所有 case 打印 level 2 或更深入的信号消耗太大]
-    OBSN --> PATHN[结合未对齐点在微架构文档中描述的信息分析问题点<br/>形成可供人工查看的判定结果与分析]
+    OBSN --> PATHN[结合未对齐点在微架构文档中描述的信息分析问题点，形成可供人工查看的判定结果与分析；<br/>必须分析是“文档问题”或“文档正确但代码实现有误”]
     PATHN --> MODN[根据判定结果修改 DUT RTL<br/>并运行当前 level 回归]
     MODN --> FIXN{bug 已消除?}
-    FIXN -->|是| DONE
+    FIXN -->|是| IMPLISSUE
     FIXN -->|否且当前 level<br/>迭代次数 < n| OBSN
     FIXN -->|否且达到 n| NEXT
     NEXT -->|否| HUMAN([人工继续细化 workflow<br/>补充 debug example 并进行知识蒸馏])
 ```
 
-主 Mermaid 图描述的是可扩展到多个 logging level 的 general case。当前实际流程暂定只有 Level 1（`N = 1`），每个 level 最多执行 10 轮 debug 循环（`n = 10`）。因此当前从 Level 1 开始，完成 10 轮迭代后问题仍未消除则转由人工接管；后续增加 logging level 时，再按图中的升级分支扩展正文规则。
+主 Mermaid 图描述的是可扩展到多个 logging level 的 general case。当前实际流程为两个 level（`N = 2`），每个 level 最多执行 10 轮 debug 循环（`n = 10`）。从 Level 1 开始，完成 10 轮迭代后问题仍未消除则升级到 Level 2；Level 2 仍无法定位或消除问题时再转由人工接管。
+
+当某一轮回归确认 bug 已消除时，不能直接结束修改，必须进一步判断根因：若确认是“文档正确但代码实现有误”，则记录证据并结束当前 bug 的修改；否则按文档问题处理（例如文档描述有误或存在歧义），修改相关文档并确认其与 RTL、验证环境和实际行为自洽，完成后才能结束当前 bug 的修改。
 
 ## 2. 目标
 
@@ -44,31 +49,22 @@ AI 在保留可复现证据的前提下，逐级增加观察信息，完成以�
 
 ### 3.1 Level 1
 
-Level 1 是当前唯一启用的 logging 等级，仅观察 commit 阶段的最小信息集，用于判断架构可见结果是否首先发生偏差。Level 1 的观察信号、采样规则和字段定义以 [`Observation_level_1.md`](Observation_level_1.md) 为准，本文不重复复制其内容。
+Level 1 是当前启用的第一个 logging 等级，仅观察 commit 阶段的最小信息集，用于判断架构可见结果是否首先发生偏差。Level 1 的观察信号、采样规则和字段定义以 [`Observation_level_1.md`](Observation_level_1.md) 为准，本文不重复复制其内容。
 
-### 3.2 后续多 level 扩展（general case）
+### 3.2 Level 2
 
-如果后续增加 Level 2 或更高等级，更高等级用于在较低等级无法确定根因时增加内部或接口级观察信息。具体可以逐步覆盖：
+Level 2 是当前已启用的第二个 logging level，用于在 Level 1 无法定位根因时概括观察关键接口和流水线事件。具体信号、采样和比较规则以 [`Observation_level_2.md`](Observation_level_2.md) 为准。Level 2 覆盖：
 
-- FE-BE、BE-cache 边界接口的 valid（暴露事件）、payload 和取消/保持状态；
-- redirect、异常和恢复控制流；
-- CSR 相关信号：tval、mcause、mstatus、vaddr 等等；
-- dispatch、issue、wakeup、依赖检查、tag mapping、scoreboard 和队列状态；
-- FU 完成、写回、ROB/提交前后的状态转移；
-- LSU、memory request/response、store buffer 和 terminal store 相关状态；
-- 其他由当前 mismatch 反推而需要的局部内部状态。
+- FE-BE 接口事件；
+- Decode 结果；
+- ISQ 事件；
+- writeback 事件；
+- CSR unit 输入/输出事件；
+- BE-LSU 接口事件。
 
-每个 level 应只启用对该轮问题有诊断价值的观察面。不得默认让所有测试在所有 level 打印全部内部信号。
+使用 Level 2 时，AI 只需概括检查上述观察信号，结合首个未对齐点判断问题路径；不要求逐字段复述该引用文档的全部内容。`Observation_level_2.md` 已定义哪些字段自动比较、哪些字段仅供 DUT 侧观察。
 
-Level 2 观测点主要服务于对数据通路的还原。在以下五个 节点 / 接口 提取在流水线中不同阶段的 payload：
-
-- FE-BE interface 的 payload【ISA_model 和 DUT 均提取，之后对比】；
-- decode 之后的payload【ISA_model 和 DUT 均提取】；
-- 进入 FU 之前的 payload【只从 DUT 提取，不和 ISA_model 对比】；
-- 出 FU 之后的 payload 【ISA_model 和 DUT 均提取】（区别于 commit 时的结果，用于排查 Completion SCB 中控制信号对 DUT 指令结果造成的 mismatch）；
-- BE-LSU interface 的 payload【ISA_model 和 DUT 均提取】；
-
-注：进入 FU 之前的 payload 仅提供给 AI debug 使用，不参与 COSIM 过程。
+本文原有但尚未在当前 Level 2 实现的更细粒度内部信号观察，统一作为后续扩展方向保留，包括 CSR 相关信号（tval、mcause、mstatus、vaddr 等等）、redirect/异常恢复、dispatch/issue/wakeup、依赖与队列状态、FU/ROB 状态转移、LSU 内部请求响应及 store buffer 等。后续扩展仍应遵守按需启用观察面的原则，不得默认让所有测试打印全部内部信号。
 
 ### 3.3 暂定参数与待细化项
 
@@ -76,9 +72,9 @@ Level 2 观测点主要服务于对数据通路的还原。在以下五个 节�
 
 | 参数 | 当前规则 | 待补充内容 |
 | --- | --- | --- |
-| `N` | 当前暂定为 1，即只启用 Level 1 | 后续根据实践确认是否增加 level |
+| `N` | 当前为 2，启用 Level 1 和 Level 2 | 后续根据实践确认是否增加更深 level |
 | 每级迭代上限 `n` | 暂定为 10；每个启用的 level 独立计数 | 根据实践确认是否需要按 level 分别配置 |
-| Level 1 观察信号 | 以 [`Observation_level_1.md`](Observation_level_1.md) 为准 | 后续如增加 level，再分别定义观察信号 |
+| Level 1/2 观察信号 | 分别以 [`Observation_level_1.md`](Observation_level_1.md) 和 [`Observation_level_2.md`](Observation_level_2.md) 为准 | 后续新增 level 时再定义观察信号 |
 | 指令类型映射 | 引用 [`RVA23_IMAFDC_Classification.xlsx`](RVA23_IMAFDC_Classification.xlsx)；通过 `Dispatch Target` 查找指令可能进入的 ISQ Group | 其他用于确定微架构路径的 header/字段待确定 |
 | debug example | 用于无法自动解决时的知识沉淀 | 典型 mismatch、证据、判断和修复案例 |
 
@@ -118,9 +114,9 @@ AI 必须根据未对齐的指令类型，先在 [`RVA23_IMAFDC_Classification.x
 
 - 每个启用的 level 有独立迭代计数器，从进入该 level 时归零；当前 Level 1 的上限为 10 轮。
 - 一轮迭代包括“观察/比较 → 分析/判定 → 修改 → 当前 level 回归测试”。
-- 若 bug 在当前 level 的 10 轮迭代内消除，结束 debug，不再提升 level。
-- 当前 Level 1 完成第 10 轮后仍无法确定根因或消除 bug，保留 Level 1 的全部证据并转入人工接管。
-- 后续增加 logging level 后，达到当前 level 的迭代上限时，才按照主 Mermaid 图升级到下一个 level；升级时应保留较低 level 的观察面作为上下文，并在日志配置中显式记录新增观察面。
+- 若 bug 在当前 level 的 10 轮迭代内消除，仍须执行“代码实现问题/文档问题”的根因判定：前者记录证据后结束当前 bug，后者修改文档并确认与代码自洽后才能结束。
+- 当前 Level 1 完成第 10 轮后仍无法确定根因或消除 bug，保留 Level 1 的全部证据并升级到 Level 2。
+- Level 2 达到 10 轮后仍无法确定根因或消除 bug，才转入人工接管；升级时验证环境将自动保留较低 level 的观察面作为上下文，并在日志中显式记录新增观察面。
 - 如果某一轮结果显示问题来自验证环境、ISA model、golden model 或接口契约，而非 DUT RTL，必须详细记录并转人工处理。
 
 ## 6. 结束条件与人工接管
@@ -133,11 +129,12 @@ AI 必须根据未对齐的指令类型，先在 [`RVA23_IMAFDC_Classification.x
 - 复现用例和规定回归集在 clean build 下通过；
 - 没有未解释的 mismatch、X/Z、协议违例或 assertion；
 - 修复原因、证据、修改内容和验证结果已形成可审查记录；
-- 没有用临时 workaround 掩盖尚未解释的微架构或接口问题。
+- 没有用临时 workaround 掩盖尚未解释的微架构或接口问题；
+- 所有因文档描述错误、描述会产生歧义等文档问题所导致的 bug 在修复后，已完成对相关问题文档的修订。
 
-### 6.2 当前 Level 1 完成 10 轮后仍失败
+### 6.2 当前 Level 2 完成 10 轮后仍失败
 
-如果当前 Level 1 完成第 10 轮迭代后 bug 仍存在，AI 不得继续无边界修改代码或宣称通过。必须输出人工接管包，至少包含：
+如果当前 Level 2 完成第 10 轮迭代后 bug 仍存在，AI 不得继续无边界修改代码或宣称通过。必须输出人工接管包，至少包含：
 
 - 所有 level 的配置、迭代次数和升级原因；
 - 每个 level 的首个未对齐点、判定结果和反复排除过的假设；
@@ -164,3 +161,28 @@ AI 必须根据未对齐的指令类型，先在 [`RVA23_IMAFDC_Classification.x
 - 当前 level 的回归是否足以证明 bug 消除；
 - 日志配置是否控制在必要范围内，且能够复现关键结论；
 - 文档、RTL、验证环境和 debug 记录是否保持一致。
+
+## 8. debug 回馈路径
+
+在 `verification/orbe_bt_env/sim` 目录下新建文件夹，起名 `verilator_<run_name>_<timestamp>`。`<run_name>` 可以是具体的程序名（只运行单个程序时；如 `rv64ua-v-amoadd_d`）或程序集和集合名（运行多个程序时；如 `216—cases-regression`）。`<timestamp>` 格式为 yyyymmddhhmm，如 `202609101432`。文件夹结构如下：
+
+```text
+verilator_<run_name>_<timestamp>/
+ ├── build/
+ ├── log/
+ |    ├── <run_name_1>/
+ |    |    ├── isa_commit.log
+ |    |    ├── isa_run.log
+ |    |    ├── sim.log
+ |    |    └── debug_analysis.md
+ |    └── <run_name_2>/
+ |         ├── isa_commit.log
+ |         ├── isa_run.log
+ |         ├── sim.log
+ |         └── debug_analysis.md
+ └── <run_name>_summary.log
+```
+
+`verilator_<run_name>_<timestamp>` 里包含 `log/` 文件夹（必要）、`build/` 文件夹（若有）和 `<run_name>_summary.log` 日志（仅运行程序集和时需要）。所有 build 产物都放到 `build/` 文件夹下。所有的日志和 debug 分析按程序组到以该程序名起名的文件夹（例如 `run_name_1`）下，且每个程序的文件夹都放到 `log/` 文件夹下。`<run_name>_summary.log` 汇总每个程序的运行情况，如 pass/fail。
+
+`isa_commit.log` 是 isa model 的 commit 日志、`isa_run.log` 是 isa model 的运行日志、`sim.log` 是 testbench 的运行日志。debug 时必要的 debug 回馈（即可供人工查看的判定结果与分析）写到 `debug_analysis.md`
