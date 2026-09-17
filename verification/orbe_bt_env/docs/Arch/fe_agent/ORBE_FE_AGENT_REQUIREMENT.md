@@ -154,10 +154,6 @@ fire[1] = valid[1] && ready[1] && fire[0]
 - 例外地，本阶段 FE 是共享 ISA Model 的创建者与销毁者；集成模式下的所有权约定见架构文档。
 - FE 不调用 `isa_dpi_trigger_trap()`，cause/tval 到 trap 的转换由 BE/Wrapper 完成。
 
-### 4.4 可观测性需求
-
-必须能通过日志区分：入口 PC、每条 entry 的 PC/编码/压缩标记、取指异常、redirect 捕获与重启、以及阶段结束判定。
-
 ## 5. 用到的 DPI
 
 FE Agent 把 ISA Model 当作**指令内存**与**阶段收尾状态来源**。它使用的 DPI 覆盖四类：
@@ -195,11 +191,7 @@ FE Agent 把 ISA Model 当作**指令内存**与**阶段收尾状态来源**。�
 
 这两个开关是**模型级全局**的、不绑定具体 agent：日志内容由 BE 驱动模型时产生，FE 只是作为当前模型 owner 打开它。
 
-### 5.3 明确不使用的 DPI
-
-`isa_dpi_decode_and_issue`、`isa_dpi_execute_insn`、`isa_dpi_commit`、`isa_dpi_commit_auto`、`isa_dpi_flush`、`isa_dpi_flush_all`、`isa_dpi_tick_finish`、`isa_dpi_trigger_trap`、`isa_dpi_proc_mem_*`、`isa_dpi_store_commit` 等属于后端生命周期，不属于 FE 职责。
-
-### 5.4 输入来源
+### 5.3 输入来源
 
 - `+ISA_CFG=<platform.yaml>`：平台配置路径，缺失即 fatal。
 - `+ISA_ELF=<test.elf>`：测试 ELF 路径，缺失即 fatal。
