@@ -72,4 +72,4 @@
 
 | 文档 | 路径 | 状态 |
 | --- | --- | --- |
-| — | — | 待补充（未上库） |
+| RTL_gen_workflow.md | [`openrios/flows/RTL_gen_workflow.md`](verification/flows/RTL_gen_workflow.md) | finished|
