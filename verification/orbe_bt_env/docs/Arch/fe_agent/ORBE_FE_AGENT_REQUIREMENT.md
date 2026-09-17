@@ -29,7 +29,7 @@ ORBE BT 验证环境由 `be_tb_top` 顶层装配，其中与 FE 相关的部分�
 be_tb_top
   ├─ orbe_fe_if  fe_vif          # FE Agent <-> DUT/Wrapper 的接口实例
   ├─ fe_agent    fe_agent_h      # 本文对象
-  └─ DUT 侧：rtl_v1_wrapper / mock_rtl（二选一，由编译宏决定）
+  └─ DUT / mock_rtl（二选一，由编译宏决定）
 ```
 
 FE Agent 位于 ISA Model 与 ORBE DUT 之间：向上从 ISA Model 取指令，向下按 ORBE FE/BE 外部接口把原始指令流交给 DUT。
@@ -38,7 +38,7 @@ FE Agent 位于 ISA Model 与 ORBE DUT 之间：向上从 ISA Model 取指令，
 ISA Model (指令内存 + 生命周期)
         ▲  DPI
         │
-   fe_driver ── orbe_fe_if ──▶ DUT/Wrapper ──▶ ORBE BE
+   fe_driver ── orbe_fe_if ──▶ ORBE BE
         ▲
         │ new/run/finish_model
      fe_agent ◀── be_tb_top

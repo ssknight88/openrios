@@ -134,7 +134,7 @@ isa_pkg -> schema_pkg -> params_pkg -> 各 module.sv -> 顶层连线 -> 顶层�
 
 验证环境的搭建以已经确认的模块边界、接口契约和时序约束为前提。总体微架构方案确定后，先划分 BE 的职责边界，明确 FE-BE、BE-cache 等边界处的交互范围；再通过微架构文档细化并确认这些边界接口的信号定义、数据含义、握手方式、时序和异常行为。微架构文档将确认后的边界、接口和时序固化为可执行的接口契约，基于此才能够在验证环境里建立各接口及其对应的 agent、驱动、监视器、ISA 级 reference model 连接和 checker。因此，验证环境搭建不是脱离微架构设计的独立工作，而是由微架构文档中已确认的边界接口和时序直接派生。
 
-验证环境的目标不是只让 RTL“跑起来”，而是在架构可观察边界证明其行为与 ISA reference 一致。详细设计见 [`ORBE_COSIM_plan.md`](../verification/orbe_bt_env/docs/Arch/ORBE_COSIM_plan.md) 和 [`ORBE_COSIM_ob_cosim_if_signal_plan.md`](../verification/orbe_bt_env/docs/Arch/ORBE_COSIM_ob_cosim_if_signal_plan.md)。
+验证环境的目标不是只让 RTL“跑起来”，而是在架构可观察边界证明其行为与 ISA reference 一致。详细设计见 [`ORBE_COSIM_plan.md`](../verification/orbe_bt_env/docs/Arch/COSIM/ORBE_COSIM_plan.md) 和 [`ORBE_COSIM_ob_cosim_if_signal_plan.md`](../verification/orbe_bt_env/docs/Arch/COSIM/ORBE_COSIM_ob_cosim_if_signal_plan.md)。
 
 ### 7.1 连接结构
 

@@ -41,7 +41,7 @@ flowchart TD
 AI 在保留可复现证据的前提下，逐级增加观察信息，完成以下闭环：
 
 1. 发现并精确描述未对齐现象；
-2. 根据指令类型、[`RVA23_IMAFDC_Classification.xlsx`](RVA23_IMAFDC_Classification.xlsx) 中的分类结果以及微架构文档提出可验证的根因判断；
+2. 根据指令类型、[`RVA23_IMAFDC_Classification.xlsx`](../RVA23_IMAFDC_Classification.xlsx) 中的分类结果以及微架构文档提出可验证的根因判断；
 3. 修改 DUT RTL，运行当前等级回归并验证判断；
 4. 在 bug 消除或人工接管之间作出明确决策；后续增加 logging level 后，再增加相应的升级决策。
 
@@ -49,11 +49,11 @@ AI 在保留可复现证据的前提下，逐级增加观察信息，完成以�
 
 ### 3.1 Level 1
 
-Level 1 是当前启用的第一个 logging 等级，仅观察 commit 阶段的最小信息集，用于判断架构可见结果是否首先发生偏差。Level 1 的观察信号、采样规则和字段定义以 [`Observation_level_1.md`](Observation_level_1.md) 为准，本文不重复复制其内容。
+Level 1 是当前启用的第一个 logging 等级，仅观察 commit 阶段的最小信息集，用于判断架构可见结果是否首先发生偏差。Level 1 的观察信号、采样规则和字段定义以 [`Observation_level_1.md`](../Observation/Observation_level_1.md) 为准，本文不重复复制其内容。
 
 ### 3.2 Level 2
 
-Level 2 是当前已启用的第二个 logging level，用于在 Level 1 无法定位根因时概括观察关键接口和流水线事件。具体信号、采样和比较规则以 [`Observation_level_2.md`](Observation_level_2.md) 为准。Level 2 覆盖：
+Level 2 是当前已启用的第二个 logging level，用于在 Level 1 无法定位根因时概括观察关键接口和流水线事件。具体信号、采样和比较规则以 [`Observation_level_2.md`](../Observation/Observation_level_2.md) 为准。Level 2 覆盖：
 
 - FE-BE 接口事件；
 - Decode 结果；
@@ -74,8 +74,8 @@ Level 2 是当前已启用的第二个 logging level，用于在 Level 1 无法�
 | --- | --- | --- |
 | `N` | 当前为 2，启用 Level 1 和 Level 2 | 后续根据实践确认是否增加更深 level |
 | 每级迭代上限 `n` | 暂定为 10；每个启用的 level 独立计数 | 根据实践确认是否需要按 level 分别配置 |
-| Level 1/2 观察信号 | 分别以 [`Observation_level_1.md`](Observation_level_1.md) 和 [`Observation_level_2.md`](Observation_level_2.md) 为准 | 后续新增 level 时再定义观察信号 |
-| 指令类型映射 | 引用 [`RVA23_IMAFDC_Classification.xlsx`](RVA23_IMAFDC_Classification.xlsx)；通过 `Dispatch Target` 查找指令可能进入的 ISQ Group | 其他用于确定微架构路径的 header/字段待确定 |
+| Level 1/2 观察信号 | 分别以 [`Observation_level_1.md`](../Observation/Observation_level_1.md) 和 [`Observation_level_2.md`](../Observation/Observation_level_2.md) 为准 | 后续新增 level 时再定义观察信号 |
+| 指令类型映射 | 引用 [`RVA23_IMAFDC_Classification.xlsx`](../RVA23_IMAFDC_Classification.xlsx)；通过 `Dispatch Target` 查找指令可能进入的 ISQ Group | 其他用于确定微架构路径的 header/字段待确定 |
 | debug example | 用于无法自动解决时的知识沉淀 | 典型 mismatch、证据、判断和修复案例 |
 
 ## 4. 单个 Level 的标准子流程
@@ -90,7 +90,7 @@ Level 2 是当前已启用的第二个 logging level，用于在 Level 1 无法�
 
 ### 4.2 分析与判定
 
-AI 必须根据未对齐的指令类型，先在 [`RVA23_IMAFDC_Classification.xlsx`](RVA23_IMAFDC_Classification.xlsx) 中找到对应指令，并通过 `Dispatch Target` 判断该指令可能进入的 ISQ Group：`G0`、`G1`、`G2`、`G3` 分别对应 `ISQ Group 0`、`ISQ Group 1`、`ISQ Group 2`、`ISQ Group 3`。随后再结合微架构文档检查对应路径中可能的问题点。其他用于确定 functional unit 或进一步细化微架构路径的 header/字段待确定。
+AI 必须根据未对齐的指令类型，先在 [`RVA23_IMAFDC_Classification.xlsx`](../RVA23_IMAFDC_Classification.xlsx) 中找到对应指令，并通过 `Dispatch Target` 判断该指令可能进入的 ISQ Group：`G0`、`G1`、`G2`、`G3` 分别对应 `ISQ Group 0`、`ISQ Group 1`、`ISQ Group 2`、`ISQ Group 3`。随后再结合微架构文档检查对应路径中可能的问题点。其他用于确定 functional unit 或进一步细化微架构路径的 header/字段待确定。
 
 分析结果必须整理为人可查看的判定记录，至少包含：
 
