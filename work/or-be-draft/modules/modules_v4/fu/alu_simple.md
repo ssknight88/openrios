@@ -32,13 +32,13 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低有效异步复位。
 	- Payload：∅。
-	- State update：`comp_q <- 0`；`pu_valid_q <- 0`；`pu_branch_pc_q <- 0`；`pu_actual_taken_q <- 0`；`pu_actual_target_q <- 0`；`pu_cf_class_q <- cf_class_e'(0)`。
+	- Side effect：`comp_q <- 0`；`pu_valid_q <- 0`；`pu_branch_pc_q <- 0`；`pu_actual_taken_q <- 0`；`pu_actual_target_q <- 0`；`pu_cf_class_q <- cf_class_e'(0)`。
 2. `global_flush_late`：取消 completion 请求和 predictor update。
 	- Fire来源：`global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：本拍禁止 `issue_valid.fire`、`request_valid.fire` 和 `predictor_update_valid.fire`。
 	- Payload：∅。
-	- State update：本拍上升沿 `comp_q <- 0`；`pu_valid_q <- 0`；predictor payload 寄存器按第 3 条中的当前输入组合值更新，但保持无效。
+	- Side effect：本拍上升沿 `comp_q <- 0`；`pu_valid_q <- 0`；predictor payload 寄存器按第 3 条中的当前输入组合值更新，但保持无效。
 3. `issue_valid`：接收一个寻址到本实例的 ALU/BRU 请求，并产生下一拍 completion 内容及 predictor update 内容。
 	- Fire来源：`issue_valid.fire = issue_valid.valid ∧ FU_ready ∧ (FU_Group = FU_GROUP_W'(G0_FU_ALU)) ∧ ¬global_flush_late.fire`
 		- `issue_valid.valid`：输入请求有效；见 `Interface -> In-event` 第 2 条。
@@ -50,7 +50,7 @@
 	- Constraint：当 `completion_state=COMPLETION_PENDING` 时，`winner_grant.fire` 与 `loser_hold` 表示当前请求仲裁成功或失败；`loser_hold=1` 时 `FU_ready=0`，不接收新请求。
 	- Payload：`alu_simple_issue_payload`；本拍上升沿采样。
 		- `alu_simple_issue_payload`：`rs1_data[XLEN-1:0]`、`rs2_data[XLEN-1:0]`、`FU_Group[FU_GROUP_W-1:0]`、`imm_data[XLEN-1:0]`、`pc[XLEN-1:0]`、`inst_bits[31:0]`、`is_compressed`、`pred_taken`、`pred_target_pc[XLEN-1:0]`、`self_tag[TAG_W-1:0]`、`exe_subop[EXE_SUBOP_W-1:0]`、`full_decode[FULL_DECODE_W-1:0]`、`fetch_excp_vld`、`fetch_excp_cause[FETCH_EXCP_CAUSE_W-1:0]`、`fetch_excp_tval[XLEN-1:0]`；`TAG_W`、`EXE_SUBOP_W`、`FULL_DECODE_W`、`FETCH_EXCP_CAUSE_W` 由 package 定义。
-	- State update：若 `hold_request=0`，先令 `comp_q <- 0`；若同时 `issue_valid.fire=1`，本拍上升沿令 `completion_state <- COMPLETION_PENDING`，并按以下公式更新 `entry.payload.completion`；若 `hold_request=1`，`comp_q` 全部字段保持。predictor 管线每个非复位上升沿均按以下公式更新。
+	- Side effect：若 `hold_request=0`，先令 `comp_q <- 0`；若同时 `issue_valid.fire=1`，本拍上升沿令 `completion_state <- COMPLETION_PENDING`，并按以下公式更新 `entry.payload.completion`；若 `hold_request=1`，`comp_q` 全部字段保持。predictor 管线每个非复位上升沿均按以下公式更新。
 		- `hold_request = comp_q.result_valid ∧ ¬winner_ack`
 			- `comp_q.result_valid`：见 `Data structure -> State` 第 2 条。
 			- `winner_ack = winner_grant.fire ∧ ¬global_flush_late.fire`
@@ -142,7 +142,7 @@
 	- Constraint：`request_valid.valid` 保持至 `request_valid.fire` 或 `global_flush_late.fire`；保持期间全部 payload 不变。
 	- Payload：`alu_simple_request_payload`；`request_valid.valid=1` 时持续有效，`request_valid.fire` 所在上升沿采样。
 		- `alu_simple_request_payload`：见 `Interface -> Out-event` 第 1 条。
-	- State update：若同拍无 `issue_valid.fire`，本拍上升沿 `comp_q <- 0`，`completion_state <- COMPLETION_EMPTY`；若同拍有 `issue_valid.fire`，按第 3 条写入新 completion，`completion_state <- COMPLETION_PENDING`。
+	- Side effect：若同拍无 `issue_valid.fire`，本拍上升沿 `comp_q <- 0`，`completion_state <- COMPLETION_EMPTY`；若同拍有 `issue_valid.fire`，按第 3 条写入新 completion，`completion_state <- COMPLETION_PENDING`。
 5. `predictor_update_valid`：广播前一拍已接收 BRU 的预测器更新，不等待 completion 仲裁。
 	- Fire来源：`predictor_update_valid.fire = pu_valid_q ∧ ¬global_flush_late.fire`
 		- `pu_valid_q`：见 `Data structure -> State` 第 3 条。
@@ -150,7 +150,7 @@
 	- Constraint：不受 `winner_grant.fire`、`loser_hold` 或 completion 保持影响；每个已接收 BRU 只产生一拍 fire。
 	- Payload：`alu_simple_predictor_update_payload`；当前拍有效。
 		- `alu_simple_predictor_update_payload`：见 `Interface -> Out-event` 第 2 条。
-	- State update：本拍上升沿按第 3 条覆盖 predictor 管线；无同拍 `issue_valid.fire` 或同拍 issue 非 BRU 时 `pu_valid_q <- 0`，同拍 issue 为 BRU 时装入新 payload 并保持 `PREDICTOR_VALID`。
+	- Side effect：本拍上升沿按第 3 条覆盖 predictor 管线；无同拍 `issue_valid.fire` 或同拍 issue 非 BRU 时 `pu_valid_q <- 0`，同拍 issue 为 BRU 时装入新 payload 并保持 `PREDICTOR_VALID`。
 
 ## Data structure
 

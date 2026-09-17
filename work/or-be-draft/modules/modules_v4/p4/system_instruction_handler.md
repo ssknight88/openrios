@@ -32,7 +32,7 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低有效异步复位，优先于全部上升沿更新。
 	- Payload：∅。
-	- State update：`entry.valid <- 0`；`entry.header <- 0`；`entry.payload <- 0`；`mstatus.mie <- 0`；`mstatus.mpie <- 0`；`mstatus.fs <- FS_OFF`；`mstatus.mpp <- PRIV_M`；`current_priv <- PRIV_M`；`mstatus.{sie,spie,spp,sum,mxr,tvm,tw,tsr} <- 0`；`mie.{meie,mtie,msie,seie,stie,ssie} <- 0`；`mip.ssip <- 0`；`mtvec <- {0,MTVEC_MODE_DIRECT}`；`stvec <- {0,MTVEC_MODE_DIRECT}`；`mepc/mcause/mtval/mscratch/sepc/scause/stval/sscratch/medeleg/mideleg/satp/mcycle/minstret/fflags <- 0`；`frm <- RM_RNE`。
+	- Side effect：`entry.valid <- 0`；`entry.header <- 0`；`entry.payload <- 0`；`mstatus.mie <- 0`；`mstatus.mpie <- 0`；`mstatus.fs <- FS_OFF`；`mstatus.mpp <- PRIV_M`；`current_priv <- PRIV_M`；`mstatus.{sie,spie,spp,sum,mxr,tvm,tw,tsr} <- 0`；`mie.{meie,mtie,msie,seie,stie,ssie} <- 0`；`mip.ssip <- 0`；`mtvec <- {0,MTVEC_MODE_DIRECT}`；`stvec <- {0,MTVEC_MODE_DIRECT}`；`mepc/mcause/mtval/mscratch/sepc/scause/stval/sscratch/medeleg/mideleg/satp/mcycle/minstret/fflags <- 0`；`frm <- RM_RNE`。
 
 2. `capture`：捕获一个可写 CSR sideband。
 	- Fire来源：`capture.fire = csr_sideband_valid.fire ∧ sb_csr_write_enable ∧ ¬global_flush_late.fire`
@@ -41,7 +41,7 @@
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 4 条。
 	- Constraint：单项暂存；在 `STAGED` 中 fire 时覆盖原暂存字段；若同拍 `apply_fire.fire` 成立，`entry.valid` 仍由 `apply_fire` 清零，`entry.header` 和 `entry.payload` 仍被本 Event 覆盖。
 	- Payload：`system_instruction_handler_csr_sideband_payload`；上升沿采样。
-	- State update：`entry.header.tag <- tag_out`；`entry.header.addr <- sb_csr_addr`；`entry.payload.wdata <- sb_csr_wdata`；若同拍 `apply_fire.fire=0`，则 `entry.valid <- 1`。
+	- Side effect：`entry.header.tag <- tag_out`；`entry.header.addr <- sb_csr_addr`；`entry.payload.wdata <- sb_csr_wdata`；若同拍 `apply_fire.fire=0`，则 `entry.valid <- 1`。
 
 3. `apply_fire`：提交 tag 命中时将暂存 CSR 写入对应架构存储。
 	- Fire来源：`apply_fire.fire = entry.valid ∧ stage_tag_hit`
@@ -51,7 +51,7 @@
 			- `entry.header.tag`：见 `Data structure -> Header` 第 1 条。
 	- Constraint：不重新判断 CSR 合法性；`global_flush_late` 不屏蔽本 Event；每个地址分支只更新明确列出的字段，其余架构存储保持；地址未命中时仅清除暂存项；`ENABLE_S=0` 时 S-mode 写分支保持；写入优先于同拍 `counter_tick` 和 `fflags_accrue`，低于同拍 trap/return Event。
 	- Payload：`entry.header.addr`、`entry.payload.wdata`；上升沿采样。
-	- State update：`entry.valid <- 0`；令 `addr=entry.header.addr`、`wdata=entry.payload.wdata`，按下列互斥地址分支更新：
+	- Side effect：`entry.valid <- 0`；令 `addr=entry.header.addr`、`wdata=entry.payload.wdata`，按下列互斥地址分支更新：
 		- `addr=ADDR_FFLAGS(12'h001)`：`fflags <- wdata[FFLAGS_W-1:0]`；`mstatus.fs <- FS_DIRTY`。
 		- `addr=ADDR_FRM(12'h002)`：`frm <- wdata[FRM_W-1:0]`；`mstatus.fs <- FS_DIRTY`。
 		- `addr=ADDR_FCSR(12'h003)`：`fflags <- wdata[FFLAGS_W-1:0]`；`frm <- wdata[FFLAGS_W +: FRM_W]`；`mstatus.fs <- FS_DIRTY`。
@@ -82,21 +82,21 @@
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 4 条。
 	- Constraint：优先于 `capture` 对 `entry.valid` 的置位；不回滚架构存储。
 	- Payload：∅。
-	- State update：`entry.valid <- 0`；`entry.header` 和 `entry.payload` 保持。
+	- Side effect：`entry.valid <- 0`；`entry.header` 和 `entry.payload` 保持。
 
 5. `counter_tick`：更新自由运行计数器。
 	- Fire来源：`counter_tick.fire = rst_n`
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：每个非复位上升沿 fire；同拍 `apply_fire` 对 `mcycle` 或 `minstret` 的写覆盖本 Event；本 Event 不改变 `entry.valid`，同拍 `capture`、`apply_fire` 或 `flush` fire 时由对应 Event 决定暂存状态，否则为本节所列自转移。
 	- Payload：`commit_count` `COMMIT_COUNT_W` bit × 1；上升沿采样。
-	- State update：`mcycle <- mcycle + XLEN'(1)`；`minstret <- minstret + XLEN'(commit_count)`。
+	- Side effect：`mcycle <- mcycle + XLEN'(1)`；`minstret <- minstret + XLEN'(commit_count)`。
 
 6. `fflags_accrue`：累计本拍退休指令的 FP flags，并按实际 FP 副作用置脏 FS。
 	- Fire来源：`fflags_accrue.fire = ∨{commit_valid[k].fire | k∈{0,...,ISSUE_WIDTH-1}}`
 		- `commit_valid[k].fire`：见 `Interface -> In-event` 第 2 条。
 	- Constraint：各 lane 的 `commit_fflags` 按位 OR；`apply_fire` 对 `fflags`、`frm` 或 `mstatus.fs` 的写覆盖本 Event；本 Event 不改变 `entry.valid`，同拍 `capture`、`apply_fire` 或 `flush` fire 时由对应 Event 决定暂存状态，否则为本节所列自转移。
 	- Payload：`system_instruction_handler_commit_payload[k]`；上升沿采样。
-	- State update：`fflags <- fflags ∨ fflags_accrued`；若 `fp_dirty=1`，`mstatus.fs <- FS_DIRTY`。
+	- Side effect：`fflags <- fflags ∨ fflags_accrued`；若 `fp_dirty=1`，`mstatus.fs <- FS_DIRTY`。
 		- `fflags_accrued = ∨{commit_fflags[k] | commit_valid[k].fire}`。
 		- `fp_dirty = ∨{commit_valid[k].fire ∧ ((rd_write_enable[k] ∧ rd_is_fp[k]) ∨ (commit_fflags[k]≠0))}`。
 
@@ -105,7 +105,7 @@
 		- `trap_state_write.fire`、`trap_state_write.kind`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：`trap_delegated=1` 时进入 S，否则进入 M；M 态发生的 trap 不委托；本 Event 对重叠架构字段的写优先于 `apply_fire`；本 Event 不改变 `entry.valid`，同拍 `capture`、`apply_fire` 或 `flush` fire 时由对应 Event 决定暂存状态，否则为本节所列自转移。
 	- Payload：`trap_state_write_t`；上升沿采样。
-	- State update：
+	- Side effect：
 		- `trap_delegated = ENABLE_S ∧ (current_priv≠PRIV_M) ∧ trap_state_write.fire ∧ (((trap_state_write.kind=RECOVERY_INTERRUPT) ∧ mideleg[trap_state_write.cause[5:0]]) ∨ ((trap_state_write.kind=RECOVERY_EXCEPTION) ∧ medeleg[trap_state_write.cause[5:0]]))`。
 		- `mcause_trap_value = {(trap_state_write.kind=RECOVERY_INTERRUPT),trap_state_write.cause}`。
 		- 若 `trap_delegated=0`：`mepc <- trap_state_write.epc`；`mcause <- mcause_trap_value`；`mtval <- trap_state_write.tval`；`mstatus.mpie <- mstatus.mie`；`mstatus.mie <- 0`；`mstatus.mpp <- current_priv`；`current_priv <- PRIV_M`。
@@ -116,14 +116,14 @@
 		- `trap_state_write.fire`、`trap_state_write.kind`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：与 `trap_entry`、`sret_update` 互斥；对重叠架构字段的写优先于 `apply_fire`；本 Event 不改变 `entry.valid`，同拍 `capture`、`apply_fire` 或 `flush` fire 时由对应 Event 决定暂存状态，否则为本节所列自转移。
 	- Payload：∅。
-	- State update：`mstatus.mie <- mstatus.mpie`；`mstatus.mpie <- 1`；`current_priv <- mstatus.mpp`；`mstatus.mpp <- PRIV_U`。
+	- Side effect：`mstatus.mie <- mstatus.mpie`；`mstatus.mpie <- 1`；`current_priv <- mstatus.mpp`；`mstatus.mpp <- PRIV_U`。
 
 9. `sret_update`：执行 SRET 特权返回更新。
 	- Fire来源：`sret_update.fire = trap_state_write.fire ∧ (trap_state_write.kind=RECOVERY_SRET)`
 		- `trap_state_write.fire`、`trap_state_write.kind`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：与 `trap_entry`、`mret_update` 互斥；对重叠架构字段的写优先于 `apply_fire`；本 Event 不改变 `entry.valid`，同拍 `capture`、`apply_fire` 或 `flush` fire 时由对应 Event 决定暂存状态，否则为本节所列自转移。
 	- Payload：∅。
-	- State update：`mstatus.sie <- mstatus.spie`；`mstatus.spie <- 1`；`current_priv <- mstatus.spp ? PRIV_S : PRIV_U`；`mstatus.spp <- 0`。
+	- Side effect：`mstatus.sie <- mstatus.spie`；`mstatus.spie <- 1`；`current_priv <- mstatus.spp ? PRIV_S : PRIV_U`；`mstatus.spp <- 0`。
 
 ## Data structure
 

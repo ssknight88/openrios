@@ -27,14 +27,14 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低有效异步复位。
 	- Payload：∅；复位边沿触发。
-	- State update：`serial_inflight_valid <- 0`；`serial_inflight_tag <- 0`。
+	- Side effect：`serial_inflight_valid <- 0`；`serial_inflight_tag <- 0`。
 
 2. `serial_set`：建立串行指令在途记录。
 	- Fire来源：`serial_set.fire = serial_set_valid.fire`
 		- `serial_set_valid.fire`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：单 lane；`serial_set.fire -> serial_inflight_valid=0`；`reset.fire` 或 `flush.fire` 时状态更新被取消。
 	- Payload：`serial_set_tag` `TAG_W` bit × 1；在 `clk` 上升沿采样。
-	- State update：`serial_inflight_valid <- 1`；`serial_inflight_tag <- serial_set_tag`。
+	- Side effect：`serial_inflight_valid <- 1`；`serial_inflight_tag <- serial_set_tag`。
 
 3. `commit_clear`：匹配在途 tag 的提交事件清除跟踪状态。
 	- Fire来源：`commit_clear.fire = serial_inflight_valid ∧ commit_hit`
@@ -45,14 +45,14 @@
 			- `serial_inflight_tag`：见 `Data structure -> Header` 第 1 条。
 	- Constraint：`k∈{0,...,ISSUE_WIDTH-1}`；仅 tag 匹配的提交 lane 触发清除；`reset.fire`、`flush.fire` 或 `serial_set.fire` 时状态更新被取消。
 	- Payload：∅；当前拍内部事件。
-	- State update：`serial_inflight_valid <- 0`；`serial_inflight_tag` 保持。
+	- Side effect：`serial_inflight_valid <- 0`；`serial_inflight_tag` 保持。
 
 4. `flush`：在 `INFLIGHT` 状态接收全局 flush，取消串行指令在途记录。
 	- Fire来源：`flush.fire = global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：单 lane、无 payload；`reset.fire` 时状态更新被取消；优先于 `serial_set` 和 `commit_clear`。
 	- Payload：∅；当前拍 pulse。
-	- State update：`serial_inflight_valid <- 0`；`serial_inflight_tag` 保持。
+	- Side effect：`serial_inflight_valid <- 0`；`serial_inflight_tag` 保持。
 
 ## Data structure
 

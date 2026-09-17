@@ -36,13 +36,13 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低电平异步有效；优先于 `flush` 和其他状态更新。
 	- Payload：∅。
-	- State update：`wakeup_held_q <- 0`；`read_done_q <- 0`；`store_done_q <- 0`；`req_in_flight_q <- 0`；`held_data_q[t] <- 0`。
+	- Side effect：`wakeup_held_q <- 0`；`read_done_q <- 0`；`store_done_q <- 0`；`req_in_flight_q <- 0`；`held_data_q[t] <- 0`。
 2. `flush`：清除桥接状态并丢弃当前拍终端输入。
 	- Fire来源：`flush.fire = global_flush_late`
 		- `global_flush_late`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：优先于 `issue_accept`、`wakeup_hold`、`read_mark`、`store_mark` 和 `terminal`。
 	- Payload：∅。
-	- State update：`wakeup_held_q <- 0`；`read_done_q <- 0`；`store_done_q <- 0`；`req_in_flight_q <- 0`；`held_data_q[t] <- 0`。
+	- Side effect：`wakeup_held_q <- 0`；`read_done_q <- 0`；`store_done_q <- 0`；`req_in_flight_q <- 0`；`held_data_q[t] <- 0`。
 3. `issue_accept`：当前 issue 请求被 LSU 接受。
 	- Fire来源：`issue_accept.fire = issue_valid ∧ bridge_has_room ∧ lsu_be_issue_ready ∧ ¬global_flush_late`
 		- `issue_valid`：见 `Interface -> In-event` 第 1 条。
@@ -52,7 +52,7 @@
 		- `global_flush_late`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：`FU_ready = bridge_has_room ∧ lsu_be_issue_ready`；同 tag 的 `terminal` 与 `issue_accept` 同拍时，时序块后执行的 issue 置位优先。
 	- Payload：`be_lsu_issue_pld`；`be_lsu_issue_valid.fire` 成立的当前拍由 LSU 采样。
-	- State update：`req_in_flight_q[entry_self_tag] <- 1`；`wakeup_held_q[entry_self_tag] <- 0`。
+	- Side effect：`req_in_flight_q[entry_self_tag] <- 1`；`wakeup_held_q[entry_self_tag] <- 0`。
 4. `wakeup_hold`：对尚未发射到 LSU 的 store wakeup 授权进行挂起。
 	- Fire来源：`wakeup_hold.fire = wakeup_accept ∧ ¬wakeup_target_present`
 		- `wakeup_accept = store_wakeup_valid ∧ rst_n ∧ ¬global_flush_late ∧ ¬wakeup_pending_any`
@@ -67,7 +67,7 @@
 			- `entry_self_tag`、`store_wakeup_tag`：见 `Interface -> In-event` 第 1、2 条 payload。
 	- Constraint：同一时刻最多保留一个 `wakeup_held_q`；目标已在 LSU 中或同拍发射时不挂起。
 	- Payload：`store_wakeup_tag`；当前拍组合有效。
-	- State update：`wakeup_held_q[store_wakeup_tag] <- 1`。
+	- Side effect：`wakeup_held_q[store_wakeup_tag] <- 1`。
 5. `read_mark`：记录当前 terminal 的 read-side 结果。
 	- Fire来源：`read_mark.fire = done_in ∧ read_side_result`
 		- `done_in = lsu_be_writeback_valid ∧ lsu_be_writeback_pld.done_valid ∧ ¬global_flush_late`
@@ -78,13 +78,13 @@
 			- `global_flush_late`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：仅 `done_in` 且同时存在 read-side bypass 时成立。
 	- Payload：`lsu_be_writeback_pld.data`。
-	- State update：`read_done_q[wb_tag] <- 1`；`held_data_q[wb_tag] <- lsu_be_writeback_pld.data`。
+	- Side effect：`read_done_q[wb_tag] <- 1`；`held_data_q[wb_tag] <- lsu_be_writeback_pld.data`。
 6. `store_mark`：记录当前 tag 的 LSU done。
 	- Fire来源：`store_mark.fire = done_in`
 		- `done_in`：见本节第 5 条。
 	- Constraint：异常 terminal 不设置 `store_done_q`。
 	- Payload：`lsu_be_writeback_pld.tag`。
-	- State update：`store_done_q[wb_tag] <- 1`。
+	- Side effect：`store_done_q[wb_tag] <- 1`。
 7. `terminal`：结束当前 tag 的 LSU 请求。
 	- Fire来源：`terminal.fire = done_in ∨ exc_in`
 		- `done_in`：见本节第 5 条。
@@ -93,7 +93,7 @@
 			- `global_flush_late`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：`done_in` 与 `exc_in` 使用同一 `wb_tag`；flush 当拍二者均无效。
 	- Payload：`wb_tag = lsu_be_writeback_pld.tag`。
-	- State update：`req_in_flight_q[wb_tag] <- 0`。
+	- Side effect：`req_in_flight_q[wb_tag] <- 0`。
 
 ## Data structure
 

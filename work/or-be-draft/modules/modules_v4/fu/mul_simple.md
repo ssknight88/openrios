@@ -29,13 +29,13 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：异步低有效复位。
 	- Payload：∅。
-	- State update：`cnt <- 0`、`busy_reg <- 0`、`reg_tag <- 0`、`reg_result <- 0`、`hold_valid <- 0`、`hold_tag <- 0`、`hold_result_data <- 0`。
+	- Side effect：`cnt <- 0`、`busy_reg <- 0`、`reg_tag <- 0`、`reg_result <- 0`、`hold_valid <- 0`、`hold_tag <- 0`、`hold_result_data <- 0`。
 2. `global_flush_late`：清除 flush 时刻全部在途乘法及完成请求。
 	- Fire来源：`global_flush_late.fire = global_flush_late`
 		- `global_flush_late`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：高电平有效；优先于 issue 接收和写回处理。
 	- Payload：∅。
-	- State update：`cnt <- 0`、`busy_reg <- 0`、`reg_tag <- 0`、`reg_result <- 0`、`hold_valid <- 0`、`hold_tag <- 0`、`hold_result_data <- 0`。
+	- Side effect：`cnt <- 0`、`busy_reg <- 0`、`reg_tag <- 0`、`reg_result <- 0`、`hold_valid <- 0`、`hold_tag <- 0`、`hold_result_data <- 0`。
 3. `issue_accept`：在空闲且 FU_Group 指向 MUL 时捕获 issue payload。
 	- Fire来源：`issue_accept.fire = issue_valid ∧ FU_ready ∧ (FU_Group == FU_GROUP_W'(G1_FU_MUL)) ∧ ¬global_flush_late`
 		- `issue_valid`：见 `Interface -> In-event` 第 2 条；其 payload 在成交前保持。
@@ -44,7 +44,7 @@
 		- `global_flush_late`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：仅 `FU_Group == FU_GROUP_W'(G1_FU_MUL)` 时接收；仅在 `IDLE` 状态有效。
 	- Payload：`mul_simple_issue_payload`；上升沿采样。
-	- State update：`cnt <- 1`、`busy_reg <- 1`、`reg_tag <- self_tag`、`reg_result <- mul_result`。
+	- Side effect：`cnt <- 1`、`busy_reg <- 1`、`reg_tag <- self_tag`、`reg_result <- mul_result`。
 		- `self_tag`：见 `Interface -> In-event` 第 2 条 payload。
 		- `mul_result`：见 `Data structure -> Payload` 第 1 条。
 4. `advance_to_wb`：将执行计数推进到写回阶段。
@@ -54,14 +54,14 @@
 		- `global_flush_late`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：仅 `EXEC` 状态有效。
 	- Payload：∅。
-	- State update：`cnt <- 0`；其余存储保持。
+	- Side effect：`cnt <- 0`；其余存储保持。
 5. `request_valid`：completion request 与仲裁器成交并释放 FU。
 	- Fire来源：`request_valid.fire = hold_valid ∧ ¬global_flush_late ∧ winner_grant`
 		- `hold_valid`：见 `Data structure -> State` 第 5 条。
 		- `global_flush_late`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：仅 `WB` 状态有效；flush 周期组合屏蔽。
 	- Payload：`mul_simple_request_payload`；当前拍有效。
-	- State update：成交时 `busy_reg <- 0`、`hold_valid <- 0`、`hold_tag <- 0`、`hold_result_data <- 0`；未成交时本拍装载 `hold_valid <- 1`、`hold_tag <- reg_tag`、`hold_result_data <- reg_result` 并保持请求。
+	- Side effect：成交时 `busy_reg <- 0`、`hold_valid <- 0`、`hold_tag <- 0`、`hold_result_data <- 0`；未成交时本拍装载 `hold_valid <- 1`、`hold_tag <- reg_tag`、`hold_result_data <- reg_result` 并保持请求。
 		- `reg_tag`：见 `Data structure -> State` 第 3 条。
 		- `reg_result`：见 `Data structure -> State` 第 4 条。
 

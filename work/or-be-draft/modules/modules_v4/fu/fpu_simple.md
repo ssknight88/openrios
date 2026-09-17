@@ -27,13 +27,13 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低有效异步复位。
 	- Payload：∅。
-	- State update：`busy_q <- 0`；`entry.payload.completion <- 0`。
+	- Side effect：`busy_q <- 0`；`entry.payload.completion <- 0`。
 2. `global_flush_late`：在本拍上升沿取消状态和 completion payload。
 	- Fire来源：`global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：优先于 `issue_valid` 的状态更新；`issue_valid.fire=0`；不组合取消已经置位的 `writeback_valid.fire` 或 `bypass_publish_valid.fire`，三者允许同拍为 1。
 	- Payload：∅。
-	- State update：本拍上升沿 `busy_q <- 0`；`entry.payload.completion <- 0`。
+	- Side effect：本拍上升沿 `busy_q <- 0`；`entry.payload.completion <- 0`。
 3. `issue_valid`：接收一个浮点 issue，组合计算结果并寄存完整 completion。
 	- Fire来源：`issue_valid.fire = issue_valid.valid ∧ FU_ready ∧ ¬global_flush_late.fire`
 		- `issue_valid.valid`：输入 issue 请求有效；见 `Interface -> In-event` 第 2 条。
@@ -42,7 +42,7 @@
 	- Constraint：`issue_valid` 为 valid/ready Transaction；`COMPLETION_VALID` 拍不接收新 issue。
 	- Payload：`fpu_simple_issue_payload`；fire 所在上升沿采样。
 		- `fpu_simple_issue_payload`：`rs1_data[XLEN-1:0]`、`rs2_data[XLEN-1:0]`、`rs3_data[XLEN-1:0]`、`self_tag[TAG_W-1:0]`、`exe_subop[EXE_SUBOP_W-1:0]`、`full_decode[FULL_DECODE_W-1:0]`；`XLEN=64`，`TAG_W`、`EXE_SUBOP_W`、`FULL_DECODE_W` 由 `or_be_types_pkg` 定义。
-	- State update：本拍上升沿 `busy_q <- 1`；`entry.payload.completion.result_valid <- 1`；`entry.payload.completion.tag_out <- self_tag`；`entry.payload.completion.result_data <- fpu_result`；`entry.payload.completion.mispredict_flag <- 0`；`entry.payload.completion.mispredict_target_pc <- 0`；`entry.payload.completion.exception_flag <- 0`；`entry.payload.completion.exception_cause <- 0`；`entry.payload.completion.exception_tval <- 0`；`entry.payload.completion.is_mret <- 0`；`entry.payload.completion.is_sret <- 0`；`entry.payload.completion.fpu_fflags <- fpu_fflags_c`。
+	- Side effect：本拍上升沿 `busy_q <- 1`；`entry.payload.completion.result_valid <- 1`；`entry.payload.completion.tag_out <- self_tag`；`entry.payload.completion.result_data <- fpu_result`；`entry.payload.completion.mispredict_flag <- 0`；`entry.payload.completion.mispredict_target_pc <- 0`；`entry.payload.completion.exception_flag <- 0`；`entry.payload.completion.exception_cause <- 0`；`entry.payload.completion.exception_tval <- 0`；`entry.payload.completion.is_mret <- 0`；`entry.payload.completion.is_sret <- 0`；`entry.payload.completion.fpu_fflags <- fpu_fflags_c`。
 		- `self_tag`：见本条 payload。
 		- `{fpu_result,fpu_fflags_c} = fpu_execute(exe_subop, full_decode[14:12], rs1_data, rs2_data, rs3_data)`
 			- `fpu_execute`：按以下组合规则产生 64 bit 结果和 5 bit flags；`fpu_fflags_c[4:0]={NV,DZ,OF,UF,NX}`，初值为 0；SP 结果初始高 32 bit 为 `32'hffffffff`。
@@ -103,7 +103,7 @@
 	- Constraint：每次 `issue_valid.fire` 只在下一拍产生一拍 `writeback_valid.fire` 和 `bypass_publish_valid.fire`；无下游 ready；二者允许与 `global_flush_late.fire` 同拍为 1。
 	- Payload：`fpu_simple_writeback_payload` 和 `fpu_simple_bypass_payload`；当前拍有效。
 		- `fpu_simple_writeback_payload`、`fpu_simple_bypass_payload`：见 `Interface -> Out-event` 第 1、2 条。
-	- State update：本拍上升沿 `busy_q <- 0`；`entry.payload.completion <- 0`。
+	- Side effect：本拍上升沿 `busy_q <- 0`；`entry.payload.completion <- 0`。
 
 ## Data structure
 

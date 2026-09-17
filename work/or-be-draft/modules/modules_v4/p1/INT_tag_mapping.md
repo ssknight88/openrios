@@ -27,13 +27,13 @@
 		- `rst_n`：低有效复位输入，见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：异步复位；复位优先于其他动作。
 	- Payload：`∅`；复位有效时立即生效。
-	- State update：对所有 `i∈{0,...,NUM_GPR-1}`，`entry_busy[i] <- 0`，`entry_tag[i] <- 0`。
+	- Side effect：对所有 `i∈{0,...,NUM_GPR-1}`，`entry_busy[i] <- 0`，`entry_tag[i] <- 0`。
 2. `flush`：清除所有整数 producer 的 busy 状态。
 	- Fire来源：`flush.fire = global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：复位释放后在时钟上升沿执行；状态更新在 `commit_clear[k]` 和 `alloc[s]` 之后执行并覆盖其对 `entry_busy` 的更新；entry 0 保持硬连值。
 	- Payload：`∅`；当拍 pulse。
-	- State update：对所有 `i∈{1,...,NUM_GPR-1}`，`entry_busy[i] <- 0`；flush 不更新 `entry_tag[i]`，同拍 `alloc[s]` 仍可更新非零 entry 的 `entry_tag`；flush 不更新 entry 0，其 `entry_busy[0]=0`、`entry_tag[0]=0`。
+	- Side effect：对所有 `i∈{1,...,NUM_GPR-1}`，`entry_busy[i] <- 0`；flush 不更新 `entry_tag[i]`，同拍 `alloc[s]` 仍可更新非零 entry 的 `entry_tag`；flush 不更新 entry 0，其 `entry_busy[0]=0`、`entry_tag[0]=0`。
 3. `alloc[s]`：接收 slot `s` 的整数 destination 重命名请求。
 	- Fire来源：`alloc[s].fire = accept[s].fire ∧ alloc_rd_write_enable[s] ∧ ¬alloc_rd_is_fp[s] ∧ (alloc_rd_idx[s] != 0)`
 		- `accept[s].fire`：见 `Interface -> In-event` 第 1 条。
@@ -43,7 +43,7 @@
 	- Constraint：`s∈{0,...,ISSUE_WIDTH-1}`；`alloc[s]` 在目标 entry 为 `IDLE` 或 `BUSY` 时均可 fire；不同 entry 的 alloc 与 commit clear 可同时生效；状态更新在 `commit_clear[k]` 之后执行，同一 entry 的 alloc 覆盖 clear；`alloc` 按 `s` 从 0 到 1 写入，同一 entry 的 slot1 写入覆盖 slot0；同拍 flush 覆盖 alloc 对 `entry_busy` 的更新，但不覆盖 alloc 对 `entry_tag` 的更新；entry 0 不被写入。
 	- Payload：`INT_tag_mapping_alloc_payload[s]`；时钟上升沿采样。
 		- `INT_tag_mapping_alloc_payload[s]`：`self_tag[s]` `TAG_W` bit × 1、`alloc_rd_idx[s]` `REG_ADDR_W` bit × 1、`alloc_rd_is_fp[s]` 1 bit × 1、`alloc_rd_write_enable[s]` 1 bit × 1。
-	- State update：对每个 fire 的 `s`，`entry_busy[alloc_rd_idx[s]] <- 1`，`entry_tag[alloc_rd_idx[s]] <- self_tag[s]`；目标 entry 原为 `BUSY` 时状态保持 `BUSY` 并替换 tag；未命中的 entry 不由 `alloc[s]` 更新。
+	- Side effect：对每个 fire 的 `s`，`entry_busy[alloc_rd_idx[s]] <- 1`，`entry_tag[alloc_rd_idx[s]] <- self_tag[s]`；目标 entry 原为 `BUSY` 时状态保持 `BUSY` 并替换 tag；未命中的 entry 不由 `alloc[s]` 更新。
 4. `commit_clear[k]`：提交 tag 与当前 entry tag 匹配时清除整数 producer busy 状态。
 	- Fire来源：`commit_clear[k].fire = commit_valid[k].fire ∧ commit_rd_write_enable[k] ∧ ¬commit_rd_is_fp[k] ∧ (commit_rd_idx[k] != 0) ∧ (entry_tag[commit_rd_idx[k]] == commit_tag[k])`
 		- `commit_valid[k].fire`：见 `Interface -> In-event` 第 2 条。
@@ -54,7 +54,7 @@
 		- `commit_tag[k]`：见 `Interface -> In-event` 第 2 条 Payload。
 	- Constraint：`k∈{0,...,ISSUE_WIDTH-1}`；fire 条件不检查 `entry_busy`，目标 entry 为 `IDLE` 且 tag 匹配时仍可 fire；tag 不匹配时不清除；entry 0 不被写入；同拍 `alloc[s]` 在本事件之后执行并可覆盖同一 entry 的 clear，同拍 `flush` 覆盖 clear。
 	- Payload：`∅`；时钟上升沿采样。
-	- State update：对每个 fire 的 `k`，`entry_busy[commit_rd_idx[k]] <- 0`；`commit_clear[k]` 不更新 `entry_tag`；目标 entry 原为 `IDLE` 时状态保持 `IDLE`；未命中的 entry 不由 `commit_clear[k]` 更新。
+	- Side effect：对每个 fire 的 `k`，`entry_busy[commit_rd_idx[k]] <- 0`；`commit_clear[k]` 不更新 `entry_tag`；目标 entry 原为 `IDLE` 时状态保持 `IDLE`；未命中的 entry 不由 `commit_clear[k]` 更新。
 
 ## Data structure
 

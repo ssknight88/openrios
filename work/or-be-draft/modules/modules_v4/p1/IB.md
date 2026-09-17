@@ -27,27 +27,27 @@
 		- `rst_n`：低有效复位输入，见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：异步复位；复位优先于其他动作。
 	- Payload：`∅`；复位有效时立即生效。
-	- State update：`wptr_q <- 0`、`rptr_q <- 0`；对所有 `i∈{0,...,IB_DEPTH-1}`，`entry.payload[i] <- 0`。
+	- Side effect：`wptr_q <- 0`、`rptr_q <- 0`；对所有 `i∈{0,...,IB_DEPTH-1}`，`entry.payload[i] <- 0`。
 2. `flush`：清空 FIFO 的逻辑有效区间。
 	- Fire来源：`flush.fire = global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：复位释放后，在时钟上升沿执行；优先于 enqueue 和 dequeue 的指针更新；flush 不修改 `entry.payload`。
 	- Payload：`∅`；当拍 pulse。
-	- State update：`wptr_q <- 0`、`rptr_q <- 0`；`entry.payload` 保持。
+	- Side effect：`wptr_q <- 0`、`rptr_q <- 0`；`entry.payload` 保持。
 3. `enqueue[s]`：接收 slot `s` 的前端指令 payload。
 	- Fire来源：`enqueue[s].fire = fe_valid[s] ∧ fe_ready[s]`
 		- `fe_valid[s]`：见 `Interface -> In-event` 第 1 条。
 		- `fe_ready[s]`：见 `Interface -> Out Static Info` 第 3 条。
 	- Constraint：`s∈{0,1}`；`enqueue[1].fire -> enqueue[0].fire`，fire 向量只能为 `00`、`01`、`11`；`flush.fire` 时无 enqueue fire。
 	- Payload：`enq_IB_Payload[s]`；时钟上升沿采样。
-	- State update：对每个 fire 的 `s`，`entry.payload[(wptr_idx+s) mod IB_DEPTH] <- enq_IB_Payload[s]`；非 flush 拍 `wptr_q <- wptr_q + enq_count`；`wptr_idx = wptr_q[IB_IDX_W-1:0]`；`enq_count` 为 2 bit、取值 `0..ISSUE_WIDTH`，`enq_count = enqueue[0].fire + enqueue[1].fire`。
+	- Side effect：对每个 fire 的 `s`，`entry.payload[(wptr_idx+s) mod IB_DEPTH] <- enq_IB_Payload[s]`；非 flush 拍 `wptr_q <- wptr_q + enq_count`；`wptr_idx = wptr_q[IB_IDX_W-1:0]`；`enq_count` 为 2 bit、取值 `0..ISSUE_WIDTH`，`enq_count = enqueue[0].fire + enqueue[1].fire`。
 4. `dequeue[s]`：消费当前队头 slot `s`。
 	- Fire来源：`dequeue[s].fire = inst_valid[s] ∧ accept[s].fire`
 		- `inst_valid[s]`：当前队头 slot `s` 的有效标志，见 `Interface -> Out Static Info` 第 2 条。
 		- `accept[s].fire`：见 `Interface -> In-event` 第 2 条。
 	- Constraint：`s∈{0,1}`；`accept[1].fire -> accept[0].fire`，因此 dequeue fire 向量只能为 `00`、`01`、`11`；`flush.fire` 与 `dequeue[s].fire` 同拍时由 flush 的指针更新覆盖 dequeue 的指针更新。
 	- Payload：`∅`；时钟上升沿采样。
-	- State update：非 flush 拍 `rptr_q <- rptr_q + deq_count`；`deq_count` 为 2 bit、取值 `0..ISSUE_WIDTH`，`deq_count = dequeue[0].fire + dequeue[1].fire`；`entry.payload` 不修改。
+	- Side effect：非 flush 拍 `rptr_q <- rptr_q + deq_count`；`deq_count` 为 2 bit、取值 `0..ISSUE_WIDTH`，`deq_count = dequeue[0].fire + dequeue[1].fire`；`entry.payload` 不修改。
 
 ## Data structure
 

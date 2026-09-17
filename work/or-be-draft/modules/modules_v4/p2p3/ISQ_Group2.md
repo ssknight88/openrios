@@ -30,20 +30,20 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低电平异步有效；优先于 `flush`、`dispatch`、`issue` 和 `bypass_capture`。
 	- Payload：∅。
-	- State update：`isq_valid <- 0`；`entry.payload` 及全部 header 字段清零。
+	- Side effect：`isq_valid <- 0`；`entry.payload` 及全部 header 字段清零。
 2. `flush`：取消当前 entry 的有效状态。
 	- Fire来源：`flush.fire = global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：优先于 `dispatch`、`issue` 和 `bypass_capture`。
 	- Payload：∅。
-	- State update：`isq_valid <- 0`；entry payload 和 header 保持。
+	- Side effect：`isq_valid <- 0`；entry payload 和 header 保持。
 3. `dispatch`：接收当前拍 `payload_in` 并覆盖写入 entry。
 	- Fire来源：`dispatch.fire = dispatch_valid ∧ ¬global_flush_late.fire`
 		- `dispatch_valid`：见 `Interface -> In-event` 第 1 条。
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：`dispatch.fire` 与 `issue.fire` 同拍成立时，由 `dispatch` 覆盖写入 entry。
 	- Payload：`payload_in`；时钟上升沿采样。
-	- State update：`isq_valid <- 1`；`entry.header.rs1_ready <- payload_in.rs1_ready`、`entry.header.rs2_ready <- payload_in.rs2_ready`、`entry.header.rs3_ready <- payload_in.rs3_ready`；`entry.header.rs1_wait_tag <- payload_in.rs1_wait_tag`、`entry.header.rs2_wait_tag <- payload_in.rs2_wait_tag`、`entry.header.rs3_wait_tag <- payload_in.rs3_wait_tag`；`entry.payload.rs1_data <- payload_in.rs1_data`、`entry.payload.rs2_data <- payload_in.rs2_data`、`entry.payload.rs3_data <- payload_in.rs3_data`、`entry.payload.self_tag <- payload_in.self_tag`、`entry.payload.exe_subop <- payload_in.exe_subop`、`entry.payload.full_decode <- payload_in.full_decode`。
+	- Side effect：`isq_valid <- 1`；`entry.header.rs1_ready <- payload_in.rs1_ready`、`entry.header.rs2_ready <- payload_in.rs2_ready`、`entry.header.rs3_ready <- payload_in.rs3_ready`；`entry.header.rs1_wait_tag <- payload_in.rs1_wait_tag`、`entry.header.rs2_wait_tag <- payload_in.rs2_wait_tag`、`entry.header.rs3_wait_tag <- payload_in.rs3_wait_tag`；`entry.payload.rs1_data <- payload_in.rs1_data`、`entry.payload.rs2_data <- payload_in.rs2_data`、`entry.payload.rs3_data <- payload_in.rs3_data`、`entry.payload.self_tag <- payload_in.self_tag`、`entry.payload.exe_subop <- payload_in.exe_subop`、`entry.payload.full_decode <- payload_in.full_decode`。
 4. `issue`：向 FPU 交付当前 entry。
 	- Fire来源：`issue.fire = issue_valid ∧ FU_ready`
 		- `FU_ready`：见 `Interface -> In Static Info` 第 2 条。
@@ -60,7 +60,7 @@
 								- `entry.header.rsX_wait_tag`：见 `Data structure -> Header` 第 2 条。
 		- Constraint：`issue_valid` 为不含 `FU_ready` 的组合请求；`issue.fire` 才释放 entry；`global_flush_late` 时不 issue。
 	- Payload：`ISQ_Group2_issue_payload`；`issue.fire` 当拍由 FPU 采样。
-	- State update：同拍 `dispatch.fire=0` 时 `isq_valid <- 0`；同拍 `dispatch.fire=1` 时由 `dispatch` 覆盖写入新 entry。
+	- Side effect：同拍 `dispatch.fire=0` 时 `isq_valid <- 0`；同拍 `dispatch.fire=1` 时由 `dispatch` 覆盖写入新 entry。
 5. `bypass_capture`：在未发射的 RESIDENT entry 中保存当前拍旁路命中的源操作数。
 	- Fire来源：`bypass_capture.fire = isq_valid ∧ ¬global_flush_late.fire ∧ ¬issue.fire ∧ any_fast_ready`
 		- `isq_valid`：见 `Data structure -> State` 第 1 条。
@@ -70,7 +70,7 @@
 			- `fast_ready[x]`：见本节第 4 条定义。
 	- Constraint：`flush`、`dispatch` 和 `issue` 优先；同一 source 多 lane 命中时由 `FU_input_mux` 按 lane 0 至 lane 3 选择数据；`rsX_wait_tag` 不更新。
 	- Payload：`u_fu_input_mux_rs1.fu_rsX_data`、`u_fu_input_mux_rs2.fu_rsX_data`、`u_fu_input_mux_rs3.fu_rsX_data`；`bypass_capture.fire` 当拍组合采样。
-	- State update：对每个 `x∈{1,2,3}`，`fast_ready[x]=1` 时 `entry.header.rsX_ready <- 1`、`entry.payload.rsX_data <- u_fu_input_mux_rsX.fu_rsX_data`；其他字段保持。
+	- Side effect：对每个 `x∈{1,2,3}`，`fast_ready[x]=1` 时 `entry.header.rsX_ready <- 1`、`entry.payload.rsX_data <- u_fu_input_mux_rsX.fu_rsX_data`；其他字段保持。
 
 ## Data structure
 

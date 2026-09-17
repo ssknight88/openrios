@@ -27,13 +27,13 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低有效异步复位。
 	- Payload：∅。
-	- State update：`busy_q <- 0`；`tag_q`、`result_data_q`、`exception_flag_q`、`exception_cause_q`、`exception_tval_q`、`is_csr_q`、`csr_write_enable_q`、`csr_addr_q`、`csr_wdata_q <- 0`。
+	- Side effect：`busy_q <- 0`；`tag_q`、`result_data_q`、`exception_flag_q`、`exception_cause_q`、`exception_tval_q`、`is_csr_q`、`csr_write_enable_q`、`csr_addr_q`、`csr_wdata_q <- 0`。
 2. `global_flush_late`：取消正在执行或等待仲裁的 completion。
 	- Fire来源：`global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：本拍禁止 `issue_valid.fire` 和 `request_valid.fire`。
 	- Payload：∅。
-	- State update：本拍上升沿 `busy_q <- 0`；所有 completion payload 寄存器清零。
+	- Side effect：本拍上升沿 `busy_q <- 0`；所有 completion payload 寄存器清零。
 3. `issue_valid`：接收一个目标为 CSR FU 的 issue，并在本拍上升沿采样 CSR completion 内容。
 	- Fire来源：`issue_valid.fire = issue_valid.valid ∧ fu_selected ∧ FU_ready ∧ ¬global_flush_late.fire`
 		- `issue_valid.valid`：输入 issue 请求有效；见 `Interface -> In-event` 第 2 条。
@@ -45,7 +45,7 @@
 	- Constraint：`issue_valid` 为 valid/ready Transaction；`FU_ready=0` 或非 CSR `FU_Group` 时不接收。
 	- Payload：`csr_unit_issue_payload`；fire 所在上升沿采样。
 		- `csr_unit_issue_payload`：`rs1_data[XLEN-1:0]`、`FU_Group[FU_GROUP_W-1:0]`、`imm_valid`、`imm_data[XLEN-1:0]`、`inst_bits[31:0]`、`self_tag[TAG_W-1:0]`、`exe_subop[EXE_SUBOP_W-1:0]`、`full_decode[FULL_DECODE_W-1:0]`。
-	- State update：本拍上升沿 `busy_q <- 1`，并写入：
+	- Side effect：本拍上升沿 `busy_q <- 1`，并写入：
 		- `tag_q <- self_tag`。
 		- `result_data_q <- csr_rdata`。
 		- `exception_flag_q <- ¬legal_csr_addr`。
@@ -70,7 +70,7 @@
 		- `winner_grant.fire`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：valid 及全部 payload 保持至 `request_valid.fire`；`global_flush_late.fire=1` 时取消输出。
 	- Payload：`csr_unit_request_payload`；valid 期间持续有效，fire 所在上升沿采样。
-	- State update：本拍上升沿 `busy_q <- 0`；completion payload 寄存器清零。
+	- Side effect：本拍上升沿 `busy_q <- 0`；completion payload 寄存器清零。
 
 ## Data structure
 

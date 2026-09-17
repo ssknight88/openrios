@@ -27,13 +27,13 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：低有效异步复位；优先于 `flush`、`commit_clear[k]` 和 `alloc[s]`。
 	- Payload：`∅`；复位有效时立即生效。
-	- State update：对所有 `i∈{0,...,NUM_FPR-1}`，`entry_busy[i] <- 0`，`entry_tag[i] <- 0`。
+	- Side effect：对所有 `i∈{0,...,NUM_FPR-1}`，`entry_busy[i] <- 0`，`entry_tag[i] <- 0`。
 2. `flush`：清除全部浮点 producer 的 busy 状态。
 	- Fire来源：`flush.fire = global_flush_late.fire`
 		- `global_flush_late.fire`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：`rst_n=1` 时在 `clk` 上升沿执行；优先于 `commit_clear[k]` 和 `alloc[s]`；不修改 `entry_tag[i]`。
 	- Payload：`∅`；当前拍 pulse。
-	- State update：对所有 `i∈{0,...,NUM_FPR-1}`，`entry_busy[i] <- 0`；`entry_tag[i]` 保持。
+	- Side effect：对所有 `i∈{0,...,NUM_FPR-1}`，`entry_busy[i] <- 0`；`entry_tag[i]` 保持。
 3. `alloc[s]`：选择最低编号的合格 slot，将 FP destination 标记为 busy 并写入 producer tag。
 	- Fire来源：`alloc[s].fire = alloc_candidate[s] ∧ (∀j∈{0,...,s-1}: ¬alloc_candidate[j])`
 		- `alloc_candidate[s] = accept[s].fire ∧ alloc_rd_write_enable[s] ∧ alloc_rd_is_fp[s]`
@@ -44,7 +44,7 @@
 	- Constraint：`s∈{0,...,ISSUE_WIDTH-1}`；每拍最多一个 `alloc[s]` fire；若多个 `alloc_candidate[s]` 同时成立，最低编号 slot fire；目标 entry 已为 `BUSY` 时仍可 fire，仅替换 producer tag，状态保持 `BUSY`；`reset.fire` 或 `flush.fire` 时状态更新被取消。
 	- Payload：`FP_tag_mapping_alloc_payload[s]`；`clk` 上升沿采样。
 		- `FP_tag_mapping_alloc_payload[s]`：`alloc_rd_write_enable[s]` 1 bit × 1、`alloc_rd_is_fp[s]` 1 bit × 1、`alloc_rd_idx[s]` `REG_ADDR_W` bit × 1、`self_tag[s]` `TAG_W` bit × 1。
-	- State update：对 fire 的 `s`，`entry_busy[alloc_rd_idx[s]] <- 1`，`entry_tag[alloc_rd_idx[s]] <- self_tag[s]`；同拍 `commit_clear[k]` 命中不同 entry 时两项更新均执行，命中同一 entry 时本更新覆盖 clear；未被任一更新命中的 entry 保持。
+	- Side effect：对 fire 的 `s`，`entry_busy[alloc_rd_idx[s]] <- 1`，`entry_tag[alloc_rd_idx[s]] <- self_tag[s]`；同拍 `commit_clear[k]` 命中不同 entry 时两项更新均执行，命中同一 entry 时本更新覆盖 clear；未被任一更新命中的 entry 保持。
 4. `commit_clear[k]`：选择最低编号的合格 commit lane，在提交 tag 匹配当前 producer tag 时清除 busy。
 	- Fire来源：`commit_clear[k].fire = commit_clear_candidate[k] ∧ (∀j∈{0,...,k-1}: ¬commit_clear_candidate[j])`
 		- `commit_clear_candidate[k] = commit_valid[k].fire ∧ commit_rd_write_enable[k] ∧ commit_rd_is_fp[k] ∧ (entry_tag[commit_rd_idx[k]] == commit_tag[k])`
@@ -57,7 +57,7 @@
 		- `commit_clear_candidate[j]`：见本条 `commit_clear_candidate[k]`，索引取 `j`；`k=0` 时前序候选集合为空。
 	- Constraint：`k∈{0,...,ISSUE_WIDTH-1}`；每拍最多一个 `commit_clear[k]` fire；若多个 `commit_clear_candidate[k]` 同时成立，最低编号 lane fire；tag 不匹配时不清除；目标 entry 为 `IDLE` 且 tag 匹配时仍可 fire，状态保持 `IDLE`；`reset.fire` 或 `flush.fire` 时状态更新被取消；同拍 `alloc[s]` 命中同一 entry 时由 `alloc[s]` 覆盖本更新。
 	- Payload：`∅`；`clk` 上升沿采样。
-	- State update：对 fire 的 `k`，`entry_busy[commit_rd_idx[k]] <- 0`；本更新不修改 `entry_tag[i]`；同拍 `alloc[s]` 命中不同 entry 时两项更新均执行，命中同一 entry 时由 `alloc[s]` 覆盖本更新；未被任一更新命中的 entry 保持。
+	- Side effect：对 fire 的 `k`，`entry_busy[commit_rd_idx[k]] <- 0`；本更新不修改 `entry_tag[i]`；同拍 `alloc[s]` 命中不同 entry 时两项更新均执行，命中同一 entry 时由 `alloc[s]` 覆盖本更新；未被任一更新命中的 entry 保持。
 
 ## Data structure
 

@@ -40,7 +40,7 @@
 
 - 一级并列对象统一使用 `1.`、`2.`、`3.` 的连续编号；编号只属于该章节，不跨章节延续。
 - 缩进项只解释所属编号对象，不产生新的同级对象；需要继续展开时继续增加缩进层级。
-- Event 主项下的 `Fire来源`、`Constraint`、`Payload` 和 `State update` 是同级 bullet，统一使用一个 Tab 后接 `-`。
+- Event 主项下的 `Fire来源`、`Constraint`、`Payload` 和 `Side effect` 是同级 bullet，统一使用一个 Tab 后接 `-`。
 - `Fire来源` 的 fire 表达式直接写在该 bullet 行，不另起“Fire来源”子 bullet；例如（下一行先输入一个 Tab）：`- Fire来源：\`enqueue[s].fire = fe_valid[s] ∧ IB_ready[s]\``。
 - fire 表达式中的信号按依赖关系递归展开：先写信号语义，再在下一层写定义式；每增加一层依赖就增加一级缩进。
 - `Out Static Info` 也必须使用同一套“公式树”格式：编号对象是根，第一层缩进只能写根公式；根公式中出现的每个派生值，按其在根公式中的直接依赖关系作为下一层缩进；多个直接依赖必须保持同级；每个派生值的公式继续写在该值的下一层。禁止把 `fp_illegal`、`rm_illegal`、`frm_illegal` 等派生项平铺到根对象的同一编号层，也禁止把一个派生项错误地缩进到另一个同级派生项下面。
@@ -183,7 +183,7 @@ FSM 描述控制通路：哪些真实状态存在、哪些 `Event` 驱动状态�
 \t\t\t- `signal_name = expression`
 \t- Constraint：约束或取值集合。
 \t- Payload：`schema`；slot 数；采样拍数。
-\t- State update：状态、指针或存储的更新式；无更新写 `无`。
+\t- Side effect：状态、指针或存储的更新式；无更新写 `无`。
 ```
 
 完整示例（以 FIFO 的 `enqueue` 为例）：
@@ -207,10 +207,10 @@ FSM 描述控制通路：哪些真实状态存在、哪些 `Event` 驱动状态�
 						- `rptr_q`：拍初读指针，指向当前 head payload。
 	- Constraint：`fe_valid[1] -> fe_valid[0]`；`enqueue` 只能为 `00`、`01`、`11`。
 	- Payload：`IB_payload[s]`。
-	- State update：`entry.payload[(wptr_idx+s) mod IB_DEPTH] <- IB_payload[s]`；`wptr_q_next = wptr_q + enq_count`；`wptr_idx = wptr_q[IB_PTR_W-2:0]`；`enq_count = enqueue[0].fire + enqueue[1].fire`。
+	- Side effect：`entry.payload[(wptr_idx+s) mod IB_DEPTH] <- IB_payload[s]`；`wptr_q_next = wptr_q + enq_count`；`wptr_idx = wptr_q[IB_PTR_W-2:0]`；`enq_count = enqueue[0].fire + enqueue[1].fire`。
 ```
 
-该示例的阅读方式是固定的：`3.` 是 Event 主项；其下四个 Tab 一级 bullet 是该 Event 的平级组成部分；只有 `Fire来源` 下的信号依赖继续缩进。`Constraint`、`Payload` 和 `State update` 不属于 fire 依赖树。
+该示例的阅读方式是固定的：`3.` 是 Event 主项；其下四个 Tab 一级 bullet 是该 Event 的平级组成部分；只有 `Fire来源` 下的信号依赖继续缩进。`Constraint`、`Payload` 和 `Side effect` 不属于 fire 依赖树。
 
 Interface 的编号和缩进同样遵循此格式。
 
@@ -220,17 +220,17 @@ Interface 的编号和缩进同样遵循此格式。
 - `Detailed Condition Description` 中的 `Fire来源` 行直接写完整 fire 表达式，不另建 `fire` 子项。
 - fire 表达式中的每个直接输入信号都作为 `Fire来源` 的下一级 bullet，先写语义，再按依赖关系继续缩进其定义式。
 - 中间信号按表达式依赖树逐级缩进，直到每个信号都能在 `Data structure`、本模块 `Interface` 或子模块公开 `Interface` 找到。
-- `Constraint`、`Payload`、`State update` 与 `Fire来源` 平级；它们内部需要展开的字段继续在所属 bullet 下缩进。
+- `Constraint`、`Payload`、`Side effect` 与 `Fire来源` 平级；它们内部需要展开的字段继续在所属 bullet 下缩进。
 - Detailed Condition 中每个非本 module 的直接输入 Event 必须在 `Interface -> In-event` 出现；直接读取的外部持续值必须在 `Interface -> In Static Info` 出现；本 module 自己计算出的状态投影、ready 或其他 Static Info 必须能在 `Data structure` 或 `Out Static Info` 找到；使用到的 submodule 计算出的状态投影、ready 或其他 Static Info 必须能在 submodule 的公开 `Interface` 找到。
 - 组合条件必须互斥且完备；不可达组合写出约束，但不为约束另造 Event。
 - Event 的 payload、slot 数和拍数在本处写出 schema；对外输出的同一项在 `Interface` 再归档一次，名称和定义必须一致。
 - 不在本节说明外部来源；外部输入统一在 `Interface -> In-event` 或 `In Static Info` 归档。
 - reset、flush、enqueue、dequeue 等名称只在真实拥有该动作的 module 中定义。准入、ready、select、route、candidate 本身没有状态更新时，属于 Static Info，不属于 Event。
-- 跨模块动作按事件链记录：生产者在 `Interface -> Out-event` 定义输出事件；消费者在 `Interface -> In-event` 定义本地输入信号；模块文档不写输入信号的生产者。集成层明确记录输出事件到输入信号的连接。消费者在自己的 `Detailed Condition Description` 中用本地 In-event 信号触发状态更新；生产者不能直接写消费者的 state update。
+- 跨模块动作按事件链记录：生产者在 `Interface -> Out-event` 定义输出事件；消费者在 `Interface -> In-event` 定义本地输入信号；模块文档不写输入信号的生产者。集成层明确记录输出事件到输入信号的连接。消费者在自己的 `Detailed Condition Description` 中用本地 In-event 信号触发状态更新；生产者不能直接写消费者的 Side effect。
 
 ## Data structure
 
-描述本 module 真正保存或持续组合产生的数据结构，并写明更新时机。有 FSM 时这里只写结构和字段，不重复完整 fire 推导和 state update；没有 FSM、但包含真实存储时，按本章 `Payload` 的无 FSM 规则定义更新时机和具体更新。
+描述本 module 真正保存或持续组合产生的数据结构，并写明更新时机。有 FSM 时这里只写结构和字段，不重复完整 fire 推导和 Side effect；没有 FSM、但包含真实存储时，按本章 `Payload` 的无 FSM 规则定义更新时机和具体更新。
 
 ### State
 

@@ -35,14 +35,14 @@
 		- `rst_n`：见 `Interface -> In Static Info` 第 1 条。
 	- Constraint：异步低有效复位。
 	- Payload：∅。
-	- State update：`head_q <- 0`；`tail_q <- 0`；对所有 `t∈{0,...,ROB_DEPTH-1}`，`entry.exec_done[t]`、`entry.store_wakeup_issued[t]`、`entry.header[t]`、`entry.event[t]` 和 `entry.payload[t]` 全部清零。
+	- Side effect：`head_q <- 0`；`tail_q <- 0`；对所有 `t∈{0,...,ROB_DEPTH-1}`，`entry.exec_done[t]`、`entry.store_wakeup_issued[t]`、`entry.header[t]`、`entry.event[t]` 和 `entry.payload[t]` 全部清零。
 2. `alloc`：接收本拍分配的 entry 批次。
 	- Fire来源：`alloc[s].fire = accept[s]`，`s∈{0,1}`
 		- `accept[s]`：见 `Interface -> In-event` 第 1 条。
 	- Constraint：外部保证分配不超过 `can_alloc_1/can_alloc_2` 所示容量并为并行分配提供不同的 `alloc_self_tag[s]`。
 		- `is_store[s]=0` 时新 entry 为 `NON_STORE_EXECUTING`；`is_store[s]=1 ∧ st_br_resolve_alloc[s]=0` 时为 `STORE_EXECUTING_UNAUTHORIZED`；`is_store[s]=1 ∧ st_br_resolve_alloc[s]=1` 时为 `STORE_EXECUTING_AUTHORIZED`；同拍 `flush.fire` 时该 entry 不进入 live window。
 	- Payload：`CompletionScoreboard_alloc_payload[s]`；上升沿采样。
-	- State update：对每个 fire 的 `s`，`entry.header[alloc_self_tag[s]].{rd_idx,rd_is_fp,rd_write_enable,is_store,is_fence_i,may_flush,is_atomic} <- CompletionScoreboard_alloc_payload[s]`；`entry.header[alloc_self_tag[s]].st_br_resolve <- st_br_resolve_alloc[s]`；`entry.exec_done[alloc_self_tag[s]] <- 0`；`entry.store_wakeup_issued[alloc_self_tag[s]] <- 0`；无 `flush.fire` 时 `tail_q <- tail_q + alloc_count`。
+	- Side effect：对每个 fire 的 `s`，`entry.header[alloc_self_tag[s]].{rd_idx,rd_is_fp,rd_write_enable,is_store,is_fence_i,may_flush,is_atomic} <- CompletionScoreboard_alloc_payload[s]`；`entry.header[alloc_self_tag[s]].st_br_resolve <- st_br_resolve_alloc[s]`；`entry.exec_done[alloc_self_tag[s]] <- 0`；`entry.store_wakeup_issued[alloc_self_tag[s]] <- 0`；无 `flush.fire` 时 `tail_q <- tail_q + alloc_count`。
 		- `alloc_count = accept[0] + accept[1]`。
 		- `st_br_resolve_alloc[0] = accept[0] ∧ is_store[0] ∧ prefix_safe_0`。
 		- `st_br_resolve_alloc[1] = accept[1] ∧ is_store[1] ∧ prefix_safe_1`。
@@ -64,7 +64,7 @@
 		- `global_flush_late`：见 `Interface -> In-event` 第 3 条。
 	- Constraint：并行 lane 的 `tag_out[g]` 互不相同。
 	- Payload：`CompletionScoreboard_writeback_payload[g]`；上升沿采样。
-	- State update：对每个 fire 的 `g`，`entry.exec_done[tag_out[g]] <- 1`；`entry.event[tag_out[g]] <- {mispredict_flag[g],exception_flag[g],is_mret[g],is_sret[g]}`；`entry.payload[tag_out[g]] <- {mispredict_target_pc[g],exception_cause[g],exception_tval[g],fpu_fflags[g]}`。
+	- Side effect：对每个 fire 的 `g`，`entry.exec_done[tag_out[g]] <- 1`；`entry.event[tag_out[g]] <- {mispredict_flag[g],exception_flag[g],is_mret[g],is_sret[g]}`；`entry.payload[tag_out[g]] <- {mispredict_target_pc[g],exception_cause[g],exception_tval[g],fpu_fflags[g]}`。
 4. `store_wakeup`：向模块边界发出一个 plain-store 授权脉冲。
 	- Fire来源：`store_wakeup.fire = wk_authorize ∧ ¬resolve_in_place`
 		- `wk_authorize = wk_found ∧ wk_cand_ok ∧ ¬flush_decided ∧ ¬wb_hits_wakeup_tag`
@@ -130,7 +130,7 @@
 		- `resolve_in_place`：见本节第 5 条。
 	- Constraint：每拍至多一个；与 `resolve_in_place` 互斥。
 	- Payload：`store_wakeup_tag` `TAG_W` bit × 1；当拍 pulse。
-	- State update：`entry.store_wakeup_issued[wk_tag] <- 1`。
+	- Side effect：`entry.store_wakeup_issued[wk_tag] <- 1`。
 5. `resolve_in_place`：候选 store 仍驻留于 `st_br_resolve` 读地址时就地授权。
 	- Fire来源：`resolve_in_place.fire = wk_authorize ∧ st_br_resolve_tag_valid ∧ (st_br_resolve_tag=wk_tag)`
 		- `wk_authorize`：见本节第 4 条。
@@ -138,7 +138,7 @@
 		- `st_br_resolve_tag`：见 `Interface -> In Static Info` 第 3 条。
 	- Constraint：与 `store_wakeup.fire` 互斥。
 	- Payload：∅。
-	- State update：`entry.header[wk_tag].st_br_resolve <- 1`。
+	- Side effect：`entry.header[wk_tag].st_br_resolve <- 1`。
 6. `commit`：按顺序提交零至两个 head entry。
 	- Fire来源：`commit[k].fire = commit_valid[k]`，`k∈{0,1}`
 		- `commit_valid[0] = head0_done ∧ ¬h0_exception ∧ (¬(interrupt_take ∧ interrupt_boundary_ok) ∨ head0_irrevocable)`
@@ -150,7 +150,7 @@
 				- `head_tag[k]`：见 `Interface -> Out Static Info` 第 1 条。
 	- Constraint：`commit[1].fire -> commit[0].fire`；双 FP destination write 时仅提交 head0。
 	- Payload：`CompletionScoreboard_commit_payload[k]`；当拍 announce。
-	- State update：`head_q <- head_q + commit_count`；若同拍没有 `flush.fire`，`tail_q <- tail_q + alloc_count`；entry 数组字段保持，离开 `[head_q,tail_q)` 后语义为 `FREE`。
+	- Side effect：`head_q <- head_q + commit_count`；若同拍没有 `flush.fire`，`tail_q <- tail_q + alloc_count`；entry 数组字段保持，离开 `[head_q,tail_q)` 后语义为 `FREE`。
 		- `commit_count = commit_valid[0] + commit_valid[1]`。
 		- `alloc_count`：见本节第 2 条。
 7. `flush`：按提交结果落地 head 后回滚全部剩余 entry。
@@ -162,7 +162,7 @@
 			- `h0_fp_write`、`h1_fp_write`：见本节第 6 条。
 	- Constraint：exception 优先于 interrupt；interrupt 优先于 head0 的 MRET、SRET、FENCE.I 和 mispredict；head1 只在 head0 普通提交后评估；双 FP block 可推迟 head1 的 commit-then-flush。
 	- Payload：`CompletionScoreboard_flush_payload`；当拍 announce。
-	- State update：`head_q <- head_q + commit_count`；`tail_q <- head_q + commit_count`；entry 数组字段保持，回滚 entry 离开 live window 后语义为 `FREE`。
+	- Side effect：`head_q <- head_q + commit_count`；`tail_q <- head_q + commit_count`；entry 数组字段保持，回滚 entry 离开 live window 后语义为 `FREE`。
 
 ## Data structure
 
