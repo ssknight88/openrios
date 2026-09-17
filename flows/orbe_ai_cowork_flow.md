@@ -43,15 +43,17 @@ flowchart TD
 
 ## 3. 前提：冻结 ISA 与架构基线
 
+
 - 选择的指令集架构及扩展（例如 RV64I/M/A/F/D/C），明确测试用例。
 - 根据 ISA 和功能目标确定 BE 所需模块与 FU，例如 Buffer、Scoreboard、依赖检查、Dispatch、ISQ、INT/FP ARF、tag mapping、ALU/BRU、MUL、DIV、FPU、CSR 和 LSU 接口。
 - 冻结顶层微架构：发射/提交宽度、队列深度、tag 地址空间、资源分组、仲裁优先级、flush/recovery 和模块层次。
 - 输入：ISA 手册、功能目标和设计意图。
 - 产物：架构范围清单（其中 ISA 编码、枚举、分类信息 --> isa_pkg）、模块划分及 block diagram、全局参数设计取值（params registry）和接口时序约束。
 
+
 ## 4. 阶段 1：建立并遵守文档规范
 
-微架构文档以 [`module_v4.md`](spec-authoring/templates/module_v4.md) 为当前 golden 骨架和规则。
+微架构文档以 [`module_v4.md`](../../flows/spec-authoring/templates/module_v4.md) 为当前 golden 骨架和规则。
 
 - 文档章节固定为 `Submodule`、`FSM`、`Data structure`、`Internal Connections`、`Interface`。
 - 文档描述可验证的契约：状态、事件、表达式、输入输出、schema、时序。
@@ -130,42 +132,64 @@ isa_pkg -> schema_pkg -> params_pkg -> 各 module.sv -> 顶层连线 -> 顶层�
 
 > **备注（有参照 RTL 时的区别）**：有参照 RTL 时，既有 RTL 和既有 package 是正式对账对象：模块本体生成前，先将微架构文档与既有 RTL 的端口声明对账；生成 package 后，再与既有 package 逐个类型比对。无参照 RTL 时不存在这些对账对象，因此端口对账移到模块生成后，改为生成 RTL 对文档的幂等对账；package 则检查生成结果自身是否齐全、可编译。若无参照 RTL 流程中存在仅供参考的历史 RTL，可以额外进行对照，但该结果只作为可选 oracle，不作为本流程的 Gate。具体流程差异见 [`GENERATION-PIPELINE.md`](GENERATION-PIPELINE.md) 第 5.0 节及其引用的 [`rtl-generation_v3.md`](spec/rtl-generation_v3.md) 第 5 节。
 
+
+
 ## 7. 阶段 4：搭建 COSIM 验证环境并跑通验收
 
 验证环境的搭建以已经确认的模块边界、接口契约和时序约束为前提。总体微架构方案确定后，先划分 BE 的职责边界，明确 FE-BE、BE-cache 等边界处的交互范围；再通过微架构文档细化并确认这些边界接口的信号定义、数据含义、握手方式、时序和异常行为。微架构文档将确认后的边界、接口和时序固化为可执行的接口契约，基于此才能够在验证环境里建立各接口及其对应的 agent、驱动、监视器、ISA 级 reference model 连接和 checker。因此，验证环境搭建不是脱离微架构设计的独立工作，而是由微架构文档中已确认的边界接口和时序直接派生。
 
-验证环境的目标不是只让 RTL“跑起来”，而是在架构可观察边界证明其行为与 ISA reference 一致。详细设计见 [`ORBE_COSIM_plan.md`](../verification/orbe_bt_env/docs/Arch/COSIM/ORBE_COSIM_plan.md) 和 [`ORBE_COSIM_ob_cosim_if_signal_plan.md`](../verification/orbe_bt_env/docs/Arch/COSIM/ORBE_COSIM_ob_cosim_if_signal_plan.md)。
+验证环境的目标不是只让 RTL“跑起来”，而是在架构可观察边界证明其行为与 ISA reference 一致。详细设计见 ... (待补充)。
 
-### 7.1 连接结构
 
-下图为 COSIM 验证环境搭建/验收阶段的连接结构，同时也画出了接入 RTL 时的连接结构方便进行对比。图中的 ISA 级 reference model 仅用于真实 RTL 接入前的环境搭建和验收；真实 DUT 接入后，该 model 将被移除，不参与第一阶段 COSIM 比对。本章只说明验证环境搭建/验收阶段。
+### 7.1 Reference model
+
+Reference model 有多种不同的实现方式，本项目的做法是基于 ISA model + BE agent。具体地，ISA model 由 BE agent 调用 DPI 来驱动。BE agent 具体的架构、实现逻辑见 [`BE_agent 文档`](待添加)。FE agent 和 cache agent 通过 DPI 所驱动的 ISA model 与 reference model 中的 ISA model 为共享的 model。另外，reference model 与 FE / cache 之间的接口以 RTL 实现，接口定义见 [`FE_BE 接口规范`](verification/orbe_bt_env/docs/interface/ORBE_FE_AGENT_INTERFACE_SPEC_brief.md) 和 [`BE_LSU 接口规范`](verification/orbe_bt_env/docs/interface/BE_LSU接口规范_v4.md) 文档。
+
+Reference model 与其他 agent 的连接如下：
 
 ```mermaid
-flowchart TB
-    FE[fe_agent] -->|orbe_fe_if| WRAPPER
-    CACHE[cache_agent] -->|or_be_lsu_if| WRAPPER
+flowchart LR
+   subgraph FEWRAPPER[FE]
+   FE[FE agent]
+   ISA1[ISA model]
+   FE -->|DPI| ISA1
+   end 
 
-    subgraph WRAPPER[rtl_v1_wrapper]
+   subgraph BEWRAPPER[BE]
+   REF[Reference model]
+   ISA2[ISA model]
+   BE -->|DPI| ISA2
+   BE -.->|ob_vif| REF
+   BE[BE agent]
+   end
 
-    REF_MODEL[ISA 级 reference model<br/>接口层 RTL] -.->|reference model 路径（本章）<br/>只用来跑通环境| PROBE[rtl_v1_obs<br/>source/probe]
-    REAL_RTL[rtl_v1/backend_top<br/>真实 DUT 实现层] -->|真实 rtl 路径（第8章）<br/>移除 ISA 级 reference model| PROBE
+   subgraph CACHEWRAPPER[Cache]
+   CACHE[Cache agent]
+   ISA3[ISA model]
+   CACHE -->|DPI| ISA3
+   end 
+   FE <====>|FE-BE interface| REF
+   REF <====>|BE-LSU interface| CACHE
+   ISA1[ISA model] <-..->|shared model| ISA2[ISA model]
+   ISA2[ISA model] <-..->|shared model| ISA3[ISA model]
 
-    PROBE -->   MAPPER[observation<br/>mapper]
-    end
-
-    MAPPER --> OB_IF[ob_if / ob_cosim_if]
-
-    OB_IF --> BE[be_agent]
-    BE --> CHECKER[COSIM adapter / checker]
-    REF[ISA level golden model] --> CHECKER
-    CACHE2[cache_agent] -->|MEM store commit observation| REF
 ```
 
-### 7.2 接口时序先于 checker
+需要注意，reference model 应分为两个递进阶段：
+
+1. **ISA 级 reference model 阶段**：此 reference model 内部实现只需满足 ISA 级功能，不要求遵循 BE 微架构结构，也不要求与微架构时序一致。但是 FE-BE 和 BE-LSU 接口时序须符合接口文档。此阶段用于在真实 RTL 接入前验收验证环境。该环境验收后接入真实 RTL 时，是以 ISA level golden model 作为功能正确性的比对对象。
+2. **时序级 reference model 阶段（后续阶段）**：此 reference model 不仅接口契约与微架构文档一致，内部时序也与微架构文档一致，用来检查 DUT RTL 的内部时序。因此，进入此阶段后，时序级 reference model 可作为 ISA level golden model 之外的第二个比对对象。此阶段是未来计划。
+
+
+### 7.2 COSIM 连接结构
+
+下图为 COSIM 验证环境搭建/验收阶段的连接结构，图中的 ISA 级 reference model 仅用于真实 RTL 接入前的环境搭建和验收；真实 DUT 接入后，该 model 将被移除，不参与第一阶段 COSIM 比对。本章只说明验证环境搭建/验收阶段。
+
+### 7.3 接口时序先于 checker
 
 在写 checker 前，先冻结 reset、posedge/negedge 采样点、commit 生效点、flush/redirect 生效点、同拍双通道顺序、ARF snapshot 可见时刻以及 store 真正写入 memory 的时刻。接口文档必须说明每个信号的 fire、payload、保持和取消规则，并能映射到模块微架构文档。
 
-### 7.3 COSIM 核心观察面
+### 7.4 COSIM 核心观察面
 
 - **Commit**：第 0/1 组 `commit_valid`、`commit_pc`、`commit_rob_idx`；同拍默认先消费第 0 组，再消费第 1 组。
 - **INT/FP ARF**：完整架构寄存器快照；`int_arf[0]` 必须恒为 0。快照必须在当拍有效 commit 写入后稳定。
@@ -173,37 +197,58 @@ flowchart TB
 - **MEM**：至少抓取 `mem_store_commit_*`（valid、顺序、地址、数据、mask/size、PC、ROB 关联、terminal）；load done 和 memory exception 可作为诊断信息。
 - `cycle`、`sequence_id` 由 COSIM adapter/checker 本地生成，不属于 DUT 观察接口。
 
-### 7.4 COSIM 环境跑通验收
+### 7.5 COSIM 环境跑通验收
 
-本阶段必须先于真实 RTL 接入。使用 ISA 级 reference model 打通 FE agent、Cache agent、BE agent 及其生命周期 ISA model、COSIM agent、RTL wrapper、ISA level golden model、观察接口、checker 和 log 通道。该 reference model 的接口层 RTL 与微架构文档 Interface 一致。使用 216 个 ISA case 测试程序跑通并验收整个验证环境，重点覆盖 reset、commit 顺序、flush/redirect、INT/FP ARF snapshot、store commit、terminal store，以及异常或恢复控制流引起的后续 commit PC/ARF 结果。此步骤只验收验证环境，不进行真实 DUT 的 COSIM。
+本阶段必须先于真实 RTL 接入。使用 ISA 级 reference model 打通 FE agent、Cache agent、COSIM agent、ISA level golden model、观察接口、checker 和 log 通道。使用 216 个 ISA case 测试程序跑通并验收整个验证环境，重点覆盖 commit 顺序、flush/redirect、INT/FP ARF snapshot、store commit、terminal store，以及异常或恢复控制流引起的后续 commit PC/ARF 结果。此步骤只验收验证环境，不进行真实 DUT 的 COSIM。
 
 验收通过后，保留已确认的 testbench、接口采样时序、checker 和 log 配置，进入真实 RTL 接入阶段。若验收不通过，则定位并修正验证环境、ISA 级 reference model、接口连接、checker 或相关配置，并重新执行本阶段；环境验收通过前不得接入真实 RTL。
 
-### 7.5 Reference model 的两个阶段
-
-需要注意，reference model 应分为两个递进阶段：
-
-1. **ISA 级 reference model（当前阶段）**：此 model 内部实现只需满足 ISA 级功能，不要求遵循 BE 微架构结构，也不要求与微架构时序一致。此阶段用于在真实 RTL 接入前验收验证环境，并以 ISA level golden model 作为功能正确性的比对对象。
-2. **时序级 reference model（后续阶段）**：此 model 不仅接口契约与微架构文档一致，接口时序和内部时序也与微架构文档一致，用来检查 DUT RTL 的内部时序以及 FE-BE、BE-cache 等接口时序。因此，进入此阶段后，时序级 reference model 可作为 ISA level golden model 之外的第二个比对对象。此阶段是未来计划。
-
 ## 8. 阶段 5：接入 RTL 进行测试、COSIM 比对与 debug 回馈
 
-RTL 生成完成且 COSIM 环境验收通过后，移除环境验收时使用的 ISA 级 reference model，将真实 RTL 接入已验收的环境，方能进行真实 RTL 与 ISA level golden model 的 COSIM。此前的环境验收已经确认 FE agent、Cache agent、BE agent 及其生命周期 ISA model、COSIM agent、RTL wrapper、ISA level golden model、观察接口、checker 和 log 通道能够正常协同工作。因此，真实 RTL 接入后若运行测试程序出现错误，可优先排查 RTL 实现或其接口适配，同时保留对验证环境集成问题的检查。接入后，进行测试、COSIM 比对与 debug 迭代。
+COSIM 环境验收通过，待真实 RTL 生成完成后，移除环境验收时使用的 ISA 级 reference model，将真实 RTL 接入已验收的环境，方能进行真实 RTL 与 ISA level golden model 的 COSIM。接入真实 RTL 后就没有 reference model 里原本的 BE agent 了。那么，要保证 ISA model 还能够按时序被驱动以维护其内部的指令生命周期并进行 RTL 和 ISA model 之间的功能比对，就需要真实 RTL 自己的 BE agent 通过 observer virtual interface 观察 RTL 内部事件，在正确的时刻调用 DPI 驱动 ISA model。
+
+```mermaid
+flowchart LR
+   subgraph FEWRAPPER[FE]
+   FE[FE agent]
+   ISA1[ISA model]
+   FE -->|DPI| ISA1
+   end 
+
+   DUT[真实 RTL]
+   ISA2[ISA model]
+   BE -->|DPI| ISA2
+   BE -.->|ob_vif| DUT
+   BE[BE agent]
+
+   subgraph CACHEWRAPPER[Cache]
+   CACHE[Cache agent]
+   ISA3[ISA model]
+   CACHE -->|DPI| ISA3
+   end 
+   FE <====>|FE-BE interface| DUT
+   DUT <====>|BE-LSU interface| CACHE
+   ISA1[ISA model] <-..->|shared model| ISA2[ISA model]
+   ISA2[ISA model] <-..->|shared model| ISA3[ISA model]
+
+```
+
+此前的环境验收已经确认 FE agent、Cache agent、ISA 级 reference model、COSIM agent、RTL wrapper、ISA level golden model、观察接口、checker 和 log 通道能够正常协同工作。因此，真实 RTL 接入后若运行测试程序出现错误，可优先排查 RTL 实现或其接口适配，同时保留对验证环境集成问题的检查。接入后，进行测试、COSIM 比对与 debug 迭代。
+
+
 
 ### 8.1 标准迭代环
 
 1. AI 在 testbench 上运行测试程序。
-2. BE agent 根据 ob_if 的生命周期观察，维护一份独立的 ISA model；COSIM agent 在每个有效 commit 推进另一份独立的 ISA level golden model。
-3. 第一阶段真实 RTL COSIM 中，checker 比较 ISA level golden model 与 DUT 的 commit PC、INT/FP ARF、已冻结的 CSR 以及 store commit 后的 memory 状态。在后续第二阶段 COSIM 中，除上述架构结果外，还需并行运行时序级 reference model，由 COSIM adapter/checker 对齐并比较该 model 与 DUT RTL 的内部时序和接口时序。
-4. AI 按 `sequence_id` 和 cycle 对齐第一处差异，结合 ob_if、ob_cosim_if、FE/Cache log 定位责任模块。
-5. 若根因是 RTL 实现错误，修改 RTL 并重跑；若根因是契约缺失或错误，先修改微架构文档，并同步修改 RTL 再测试。
+2. BE agent 根据 ob_if 的生命周期观察，维护一份 ISA model；COSIM agent 在每个有效 commit 推进另一份独立的 ISA level golden model。
+3. 第一阶段真实 RTL COSIM 中，checker 比较 ISA level golden model 与 DUT 的 commit PC、INT/FP ARF、已冻结的 CSR 以及 store commit 后的 memory 状态。在后续第二阶段 COSIM 中，除上述架构结果外，还需并行运行时序级 reference model，由 COSIM adapter/checker 对齐并比较该 model 与 DUT RTL 的内部时序。
+4. AI 按 `sequence_id` 和 cycle 对齐第一处差异，结合 ob_vif、ob_cosim_vif、FE/Cache log 定位责任模块。
+5. 若根因是 RTL 实现错误，修改 RTL 并重跑；若根因是契约缺失、错误、存在歧义，同步修改微架构文档，和 RTL 再测试。
 6. 将根因、证据、修改文件、回归结果和是否新增约束写入 debug 回馈文档，保留失败用例和修复前后 log 摘要。
 
-### 8.2 常见定位顺序
+具体的流程细节见 [`RTL_debug_flow_and_rule.md`](verification/orbe_bt_env/docs/Arch/RTL_debug_flow_and_rule.md)
 
-先检查 reset/采样时序和 commit 顺序，再检查 PC/flush，再检查 ARF 写回和 tag/依赖，最后检查 memory store/load 语义。store 不能只用普通 `commit_valid` 替代 store commit 事件；否则未被后续 load 读取的错误可能漏检。
-
-### 8.3 通过条件
+### 8.2 通过条件
 
 以 216 个 ISA case 测试程序通过作为验收条件之一；测试集在 clean build 下重复运行通过；无未解释的 mismatch（DUT 与 ISA level golden model 结果不一致）、未知值 X / 高阻值 Z、接口时序 / 握手规则违例或 assertion；debug 回馈文档中的所有临时 workaround 均已转化为正式 RTL 和正式文档。后续第二阶段 COSIM 的通过条件还应包括：DUT 与时序级 reference model 无未解释的时序 mismatch。
 
