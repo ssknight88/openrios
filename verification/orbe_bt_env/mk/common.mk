@@ -39,15 +39,21 @@ else
 RTL_FILELIST ?= $(ROOT_DIR)/cfg/filelist/rtl_$(DUT_KIND).f
 endif
 
-# Keep the ISA model binary release outside the testbench source tree.  A full
-# ISA model checkout can be used directly by setting ISA_MODEL_INSTALL or by
-# setting ISA_API_INC/ISA_API_LIB below.
-ISA_MODEL_ROOT ?= $(abspath $(ROOT_DIR)/..)
-ISA_MODEL_INSTALL ?= $(ISA_MODEL_ROOT)
-ISA_API_INC ?= $(if $(wildcard $(ISA_MODEL_INSTALL)/include/IsaApi.h),$(ISA_MODEL_INSTALL)/include,$(ISA_MODEL_INSTALL)/src/libs)
-ISA_API_LIB ?= $(if $(wildcard $(ISA_MODEL_INSTALL)/lib/lib_ISA_api.so),$(ISA_MODEL_INSTALL)/lib,$(ISA_MODEL_INSTALL)/build)
 # The active DPI adapter and platform configuration are project-owned sources.
 ISA_DPI_DIR ?= $(ROOT_DIR)/dpi
+# The ISA model release pair (IsaApi.h plus lib_ISA_api.so) is vendored in dpi/,
+# next to the adapter that consumes it, so a fresh checkout builds the same way.
+# Point ISA_MODEL_INSTALL at an external release (include/ and lib/) or checkout
+# (src/libs and build) to build against a different model, or set
+# ISA_API_INC/ISA_API_LIB directly.
+ISA_MODEL_ROOT ?= $(abspath $(ROOT_DIR)/..)
+ISA_MODEL_INSTALL ?= $(ISA_MODEL_ROOT)
+ISA_API_INC ?= $(if $(wildcard $(ISA_MODEL_INSTALL)/include/IsaApi.h),$(ISA_MODEL_INSTALL)/include,$(if $(wildcard $(ISA_MODEL_INSTALL)/src/libs/IsaApi.h),$(ISA_MODEL_INSTALL)/src/libs,$(ISA_DPI_DIR)))
+ISA_API_LIB ?= $(if $(wildcard $(ISA_MODEL_INSTALL)/lib/lib_ISA_api.so),$(ISA_MODEL_INSTALL)/lib,$(if $(wildcard $(ISA_MODEL_INSTALL)/build/lib_ISA_api.so),$(ISA_MODEL_INSTALL)/build,$(ISA_DPI_DIR)))
+# Resolve the two release files through wildcard().  A missing file then drops
+# out of the prerequisite list instead of failing with make's bare "No rule to
+# make target", so check_isa_abi reports the real problem and how to fix it.
+ISA_API_HEADER := $(wildcard $(ISA_API_INC)/IsaApi.h)
 # Keep the DPI shared object with the other build products for this SYS+TAG.
 # Its compile stamp includes VCS_HOME so a different VCS ABI invalidates it.
 ISA_DPI_BUILD ?= $(VCS_CACHE_ROOT)/dpi
@@ -59,6 +65,11 @@ ISA_DPI_LIB_IS_AUTO := $(if $(filter $(ISA_DPI_AUTO_LIB),$(abspath $(ISA_DPI_LIB
 ISA_DPI_LIB_BASE := $(patsubst %.so,%,$(abspath $(ISA_DPI_LIB)))
 ISA_MODEL_LIB := $(ISA_API_LIB)/lib_ISA_api.so
 ISA_MODEL_LIBDIR := $(ISA_API_LIB)
+# IsaApi.h is hand maintained next to the model sources, so the release pair can
+# drift from this DPI wrapper.  check_isa_api_release.py derives the required
+# declarations and symbols from ISA_DPI_WRAPPER, so the check follows the
+# wrapper as it grows.
+ISA_ABI_CHECKER := $(ROOT_DIR)/tools/check_isa_api_release.py
 ISA_CFG ?= $(ISA_DPI_DIR)/rivai_0x80000000_1core_rom.yaml
 ISA_CFG_ABS := $(abspath $(ISA_CFG))
 export TEST LANES DUT_KIND ISA_CFG ISA_DPI_LIB OBJDUMP PLUSARGS VCS_CACHE_ROOT VCS_CACHE_KEY
@@ -125,6 +136,9 @@ DUMP_INPUT := $(wildcard $(TC_ABS))
 
 VCS_CONFIG_STAMP := $(RTL_LIB_DIR)/.vcs_compile_config_$(VCS_CACHE_KEY).stamp
 DPI_CONFIG_STAMP := $(ISA_DPI_BUILD)/.dpi_compile_config_$(VCS_CACHE_KEY).stamp
+# Records a successful ISA model release pair check.  It is a real file, not a
+# phony target, so depending on it does not force a DPI rebuild.
+ISA_ABI_STAMP := $(ISA_DPI_BUILD)/.isa_abi_$(VCS_CACHE_KEY).stamp
 
 # SYS selects the macro profile used by the VCS compile. Keep this table in
 # common.mk so future systems can add a profile without changing Makefile
@@ -232,11 +246,17 @@ endif
 
 # Keep Make's dependency graph split as well: changing a TB file invokes VCS,
 # but -Mupdate recompiles only that TB unit before elaborating a new simv.
-RTL_SOURCE_ROOTS := $(ROOT_DIR)/../backend_rtl_copy
-ifeq ($(DUT_KIND),rtl_v1)
-RTL_SOURCE_ROOTS += $(ROOT_DIR)/../rtl/rtl_v1
-endif
-RTL_SOURCES := $(shell for d in $(RTL_SOURCE_ROOTS); do \
+#
+# The DUT sources are exactly the entries cfg/filelist/rtl_<dut>.f names, and the
+# VCS command below already compiles that filelist.  Deriving the dependency list
+# from the same file keeps the filelist the single place that knows where the RTL
+# tree lives, so no repository specific RTL path has to be repeated here and a
+# checkout that keeps its RTL somewhere else only edits the filelist.  Set
+# RTL_SOURCE_ROOTS to add extra trees that the filelist does not cover.
+RTL_SOURCE_ROOTS ?=
+RTL_FILELIST_ENTRIES := $(shell cat $(RTL_FILELIST) 2>/dev/null)
+RTL_SOURCES := $(foreach src,$(filter %.sv %.v %.vh,$(RTL_FILELIST_ENTRIES)),$(if $(wildcard $(ROOT_DIR)/$(src)),$(abspath $(ROOT_DIR)/$(src)),))
+RTL_SOURCES += $(shell for d in $(RTL_SOURCE_ROOTS); do \
 	test ! -d "$$d" || find "$$d" -type f \( -name '*.sv' -o -name '*.v' -o -name '*.vh' \); \
 done 2>/dev/null)
 TB_SOURCES := $(shell find "$(ROOT_DIR)/tb" "$(ROOT_DIR)/tests" -type f \( -name '*.sv' -o -name '*.v' -o -name '*.vh' \) 2>/dev/null)
@@ -251,7 +271,7 @@ VCS_DEPS := $(COMMON_DEPS) $(RTL_DEPS) $(TB_DEPS)
 VCS_CACHE_CONFIG := CACHE_KEY=$(VCS_CACHE_KEY) VCS=$(VCS) TOP=$(TOP) DUT_KIND=$(DUT_KIND) LANES=$(LANES) SYS=$(SYS) FCOV=$(FCOV) PIPEVIEW=$(PIPEVIEW) TIMESCALE=1ns/1ps SYS_VCS_FLAGS=$(SYS_VCS_FLAGS) SYS_DEFINES=$(SYS_DEFINES) VCS_EXTRA_FLAGS=$(VCS_EXTRA_FLAGS) FSDB_PLI_DIR=$(FSDB_PLI_DIR)
 DPI_CACHE_CONFIG := CXX=$(CXX) VCS_HOME=$(VCS_HOME) ISA_DPI_DIR=$(ISA_DPI_DIR) ISA_MODEL_INSTALL=$(ISA_MODEL_INSTALL) ISA_API_INC=$(ISA_API_INC) ISA_API_LIB=$(ISA_API_LIB) ISA_MODEL_LIB=$(ISA_MODEL_LIB)
 
-.PHONY: all build build_all compile compile_rtl compile_tb compile_dpi sim run dump fsdb gen_task regression regression_report +tag clean clean_cache help check_isa_inputs check_regression_inputs
+.PHONY: all build build_all compile compile_rtl compile_tb compile_dpi sim run dump fsdb gen_task regression regression_report +tag clean clean_cache help check_isa_inputs check_regression_inputs check_isa_abi
 
 all: run
 
@@ -299,7 +319,19 @@ $(DPI_CONFIG_STAMP): $(SIM_MAKEFILE) $(ROOT_DIR)/mk/common.mk
 	@rm -f "$(ISA_DPI_BUILD)"/.dpi_compile_config_*.stamp
 	@printf '%s\n' '$(DPI_CACHE_CONFIG)' > "$@"
 
-$(ISA_DPI_LIB): $(ISA_DPI_WRAPPER) $(ISA_API_INC)/IsaApi.h $(ISA_MODEL_LIB) $(DPI_CONFIG_STAMP)
+# Verify the ISA model release pair before compiling against it.  A drifted
+# IsaApi.h fails with a clear message here instead of an obscure error inside the
+# wrapper, and a missing symbol is caught before the simulator starts.  These two
+# rules are also the only place that reports an ISA model which was not provided
+# at all, because the release files are resolved through wildcard() above.
+check_isa_abi: $(ISA_ABI_STAMP)
+
+$(ISA_ABI_STAMP): $(ISA_ABI_CHECKER) $(ISA_DPI_WRAPPER) $(ISA_API_HEADER) $(wildcard $(ISA_MODEL_LIB)) $(DPI_CONFIG_STAMP)
+	$(MKDIR_P) "$(ISA_DPI_BUILD)"
+	@$(PYTHON) "$(ISA_ABI_CHECKER)" --inc "$(ISA_API_INC)" --lib "$(ISA_MODEL_LIBDIR)"
+	@printf '%s\\n' 'isa abi check passed' > "$@"
+
+$(ISA_DPI_LIB): $(ISA_DPI_WRAPPER) $(ISA_API_HEADER) $(wildcard $(ISA_MODEL_LIB)) $(DPI_CONFIG_STAMP) $(ISA_ABI_STAMP)
 	@test -n "$(VCS_HOME)" || { echo "VCS_HOME must name a VCS installation containing include/svdpi.h"; exit 1; }
 	@test -r "$(VCS_HOME)/include/svdpi.h" || { echo "missing $(VCS_HOME)/include/svdpi.h"; exit 1; }
 	$(MKDIR_P) $(ISA_DPI_BUILD)
@@ -484,7 +516,11 @@ help:
 	@echo "make build                         # incremental VCS build"
 	@echo "make build_all                     # rebuild all VCS and DPI sources"
 	@echo "make compile_rtl|compile_tb|compile_dpi"
-	@echo "make build DUT_KIND=rtl_v1         # build with rtl/rtl_v1 backend_top wrapper"
+	@echo "make check_isa_abi                 # verify IsaApi.h + lib_ISA_api.so against the DPI wrapper"
+	@echo "  ISA model lookup: dpi/, then ISA_MODEL_INSTALL/<include|src/libs>"
+	@echo "                    and ISA_MODEL_INSTALL/<lib|build>"
+	@echo "  python3 tools/check_isa_api_release.py --smoke"
+	@echo "make build DUT_KIND=rtl_v1         # build with the backend RTL DUT"
 	@echo "make sim TC=/absolute/path/to/test.elf [SEED=1]"
 	@echo "make sim TC=/absolute/path/to/test.elf PLUSARGS='+VERBOSITY=2'"
 	@echo "make sim TC=/absolute/path/to/test.elf CACHE_LOAD_RETURN_DELAY_CYCLES=3"

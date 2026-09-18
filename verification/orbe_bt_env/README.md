@@ -12,6 +12,8 @@ mock-DUT self-checks and rtl_v1 COSIM debug.
 - `cfg/filelist/` contains source lists for mock and rtl_v1 builds.
 - `mk/` and `sim/` contain the VCS build and run flow.
 - `tools/verilator_cosim.sh` builds and runs the same testbench with Verilator.
+- `tools/check_isa_api_release.py` verifies the ISA model binary release pair
+  against `dpi/isa_dpi_wrapper.cc`.
 - `docs/` contains architecture and bring-up notes.
 - `mock_tb/` contains the older standalone FE mock flow.
 
@@ -30,41 +32,150 @@ obj_dir
 
 ## External Dependencies
 
-This open-source package does not vendor the full ISA model checkout, ISA case
-ELFs, prebuilt ISA model shared library, or rtl_v1 source tree. Point the
-environment at local copies before building:
+This open-source package vendors the ISA model as a binary release pair, and
+does not vendor the ISA model source, the ISA case ELFs, or the RTL source
+tree. Building needs an ISA case set and a bare metal RISC-V toolchain; see
+"ISA test cases" below.
+
+### ISA model: vendored release pair
+
+`IsaApi.h` and `lib_ISA_api.so` carry the private ISA model interface. Both
+ship in `dpi/`, next to the adapter that consumes them, so a fresh checkout
+builds without any configuration:
+
+```text
+dpi/IsaApi.h
+dpi/lib_ISA_api.so
+```
+
+Only the header and the shared library are distributed; the model source is
+not. To build against a different model, point the environment at an external
+release (`include/` and `lib/`) or at a full checkout (`src/libs` and `build`);
+the build files pick between the layouts automatically.
+
+| Source | Header | Library |
+| --- | --- | --- |
+| Vendored in this repository (default) | `dpi/IsaApi.h` | `dpi/lib_ISA_api.so` |
+| External release | `<install>/include/IsaApi.h` | `<install>/lib/lib_ISA_api.so` |
+| Full source checkout | `<checkout>/src/libs/IsaApi.h` | `<checkout>/build/lib_ISA_api.so` |
 
 ```bash
+# Default: use the release pair vendored in dpi/, nothing to set
+
+# Or an external release
+export ISA_MODEL_INSTALL=<path-to-isa-model-release>
+
+# Or a full checkout, for internal development
 export ISA_MODEL_ROOT=<path-to-isa_model-checkout>
-export ISA_API_INC=$ISA_MODEL_ROOT/src/libs
-export ISA_API_LIB=$ISA_MODEL_ROOT/build
+
 export ISA_CFG=$PWD/dpi/rivai_0x80000000_1core_rom.yaml
 ```
 
-The ISA model checkout is expected to provide:
+`ISA_API_INC` and `ISA_API_LIB` override the resolved directories directly:
 
-```text
-$ISA_API_INC/IsaApi.h
-$ISA_API_LIB/lib_ISA_api.so
-$ISA_MODEL_ROOT/isa_case/
+```bash
+export ISA_API_INC=$ISA_MODEL_INSTALL/include
+export ISA_API_LIB=$ISA_MODEL_INSTALL/lib
 ```
 
-Build the ISA model shared library from that checkout before running COSIM:
+`ISA_MODEL_INSTALL` defaults to the parent directory of `orbe_bt_env`, and when
+neither that nor `ISA_API_INC`/`ISA_API_LIB` resolves to a release pair, the
+build falls back to the pair vendored in `dpi/`. The ISA regression ELF set is
+read from `$ISA_CASE_DIR/`; see [ISA Regression Scope](#isa-regression-scope).
+
+### Verify the release pair before building
+
+`IsaApi.h` is hand maintained next to the model sources, so it drifts from the
+library that is actually shipped. A drifted pair either fails to compile or
+fails to link only when the simulator starts, so this package checks the pair
+against the DPI wrapper, which is open source:
+
+```bash
+cd verification/orbe_bt_env
+
+# The release pair vendored in dpi/, which is what a bare checkout builds
+python3 tools/check_isa_api_release.py
+python3 tools/check_isa_api_release.py --smoke
+
+# Or an external release or checkout
+python3 tools/check_isa_api_release.py --install "$ISA_MODEL_INSTALL"
+```
+
+The tool reads `dpi/isa_dpi_wrapper.cc`, derives the `IsaApi.h` declarations
+and `lib_ISA_api.so` symbols the wrapper really uses, and reports every missing
+item. `--smoke` additionally builds the DPI shared object against the pair,
+loads it, and drives the model through its lifecycle. The VCS flow exposes the
+same check as `make check_isa_abi`, and the VCS, Verilator, and `mock_tb` builds
+all run it before compiling.
+
+### Rebuilding the model from a checkout
 
 ```bash
 cmake -S "$ISA_MODEL_ROOT" -B "$ISA_MODEL_ROOT/build" -G Ninja
-cmake --build "$ISA_MODEL_ROOT/build" --target _ISA_api
+cmake --build "$ISA_MODEL_ROOT/build"                    # builds _ISA_api and _ISA_api_ext
+cmake --install "$ISA_MODEL_ROOT/build"                  # refreshes include/ and lib/
 ```
 
-The default rtl_v1 filelist assumes the real RTL tree is available at this
-path, relative to `orbe_bt_env`:
+`cmake --build --target _ISA_api` builds only the main library, while
+`cmake --install` also installs `lib_ISA_api_ext.so`. Build the default target,
+or add `_ISA_api_ext`, before installing so the release pair stays complete.
 
-```text
-../rtl/rtl_v1
+A rebuild only refreshes the checkout's own `include/` and `lib/`. Copy
+`include/IsaApi.h` and `lib/lib_ISA_api.so` into `dpi/` to update the release
+pair that ships with this repository.
+
+### RTL tree
+
+`cfg/filelist/rtl_v1.f` names the backend RTL sources, relative to
+`orbe_bt_env`, so it is the single place that records where the RTL tree lives.
+Both flows read it: Verilator compiles it directly, and `mk/common.mk` derives
+the VCS dependency list from the same entries. Nothing else repeats the path, so
+a checkout only edits the filelist to point at its own tree.
+
+If your RTL lives outside the repository, either edit `cfg/filelist/rtl_v1.f` or
+place a symlink where it already points. Extra source trees that the filelist
+does not cover can be added through `RTL_SOURCE_ROOTS`.
+
+### ISA test cases
+
+The ISA regression cases come from
+[riscv-tests](https://github.com/riscv-software-src/riscv-tests), vendored as a
+submodule together with its nested `env` submodule (`riscv/riscv-test-env`).
+Clone with submodules:
+
+```bash
+git clone --recurse-submodules <this-repo>
+# or, in an existing clone
+git submodule update --init --recursive
 ```
 
-If your RTL lives elsewhere, create a symlink at that location or update
-`cfg/filelist/rtl_v1.f` for your local tree.
+riscv-tests ships assembly sources only, so the `.riscv` ELF images the
+environment consumes have to be cross compiled. Build them with:
+
+```bash
+cd verification/orbe_bt_env
+export ISA_CASE_DIR=$(cd ../.. && pwd)/isa_case
+
+tools/build_isa_cases.sh --out "$ISA_CASE_DIR"
+```
+
+This needs a bare metal RISC-V toolchain providing `riscv64-unknown-elf-gcc`
+together with `objdump` and `objcopy`. Override it with `RISCV_GCC` or
+`RISCV_PREFIX`. The script builds the 216 case regression set and checks each
+category against its expected count.
+
+The submodule is pinned to the revision whose test composition matches the
+historical regression set (rv64ui 104, rv64um 26, rv64ua 38, rv64uf 22,
+rv64ud 24, rv64uc 2). The `-p-` machine mode cases are pure assembly and
+reproduce that baseline byte for byte. The `-v-` supervisor mode cases compile
+the `env/v` runtime from C, so their code depends on the compiler version; use
+a GCC close to the one the baseline was produced with when byte level
+comparison matters.
+
+The submodule also carries `rv64mi`, `rv64si`, `rv64uzba`, `rv64uzbb`,
+`rv64uzbc`, `rv64uzbs`, `rv64uzfh`, `rv64mzicbo` and `rv64ssvnapot`; pass
+`--categories` to build them. The `rv64model` cases are project private and are
+not produced by this script.
 
 ## Entry Points
 
@@ -77,7 +188,7 @@ make build DUT_KIND=rtl_v1 COSIM_ENABLE=1
 
 make run \
   DUT_KIND=rtl_v1 \
-  TC=$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv \
+  TC=$ISA_CASE_DIR/rv64ui/rv64ui-p-add.riscv \
   COSIM_ENABLE=1 \
   PLUSARGS='+VERBOSITY=2'
 ```
@@ -95,7 +206,7 @@ orbe_bt_env/tools/verilator_cosim.sh run \
   --no-build \
   --dut-kind rtl_v1 \
   --tag local \
-  --tc "$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv" \
+  --tc "$ISA_CASE_DIR/rv64ui/rv64ui-p-add.riscv" \
   --timeout 200000 \
   --verbosity 2
 ```
@@ -125,14 +236,14 @@ plusarg through `--plusargs`:
 # Level 1
 orbe_bt_env/tools/verilator_cosim.sh run \
   --dut-kind rtl_v1 \
-  --tc "$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv" \
+  --tc "$ISA_CASE_DIR/rv64ui/rv64ui-p-add.riscv" \
   --verbosity 2 \
   --plusargs '+COSIM_LEVEL=1'
 
 # Level 2
 orbe_bt_env/tools/verilator_cosim.sh run \
   --dut-kind rtl_v1 \
-  --tc "$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv" \
+  --tc "$ISA_CASE_DIR/rv64ui/rv64ui-p-add.riscv" \
   --verbosity 2 \
   --plusargs '+COSIM_LEVEL=2'
 ```
@@ -142,7 +253,7 @@ With the VCS Makefile flow, include the same plusarg in `PLUSARGS`:
 ```bash
 make -C verification/orbe_bt_env/sim run \
   DUT_KIND=rtl_v1 \
-  TC=$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv \
+  TC=$ISA_CASE_DIR/rv64ui/rv64ui-p-add.riscv \
   COSIM_ENABLE=1 \
   PLUSARGS='+COSIM_LEVEL=2 +VERBOSITY=2'
 ```
@@ -164,12 +275,12 @@ acceptance set unless they are explicitly added later.
 Check the canonical count:
 
 ```bash
-find "$ISA_MODEL_ROOT/isa_case/rv64ui" \
-     "$ISA_MODEL_ROOT/isa_case/rv64um" \
-     "$ISA_MODEL_ROOT/isa_case/rv64ua" \
-     "$ISA_MODEL_ROOT/isa_case/rv64uf" \
-     "$ISA_MODEL_ROOT/isa_case/rv64ud" \
-     "$ISA_MODEL_ROOT/isa_case/rv64uc" \
+find "$ISA_CASE_DIR/rv64ui" \
+     "$ISA_CASE_DIR/rv64um" \
+     "$ISA_CASE_DIR/rv64ua" \
+     "$ISA_CASE_DIR/rv64uf" \
+     "$ISA_CASE_DIR/rv64ud" \
+     "$ISA_CASE_DIR/rv64uc" \
   -maxdepth 1 -type f -name '*.riscv' -print | sort | wc -l
 ```
 
@@ -240,7 +351,7 @@ With the Verilator COSIM script, use `--verbosity <1|2|3>`:
 orbe_bt_env/tools/verilator_cosim.sh run \
   --no-build \
   --dut-kind rtl_v1 \
-  --tc "$ISA_MODEL_ROOT/isa_case/rv64ua/rv64ua-v-amoadd_d.riscv" \
+  --tc "$ISA_CASE_DIR/rv64ua/rv64ua-v-amoadd_d.riscv" \
   --timeout 2500000 \
   --verbosity 2
 ```
@@ -250,7 +361,7 @@ With the VCS Makefile flow, pass the raw plusarg through `PLUSARGS`:
 ```bash
 make -C verification/orbe_bt_env/sim run \
   DUT_KIND=rtl_v1 \
-  TC=$ISA_MODEL_ROOT/isa_case/rv64ua/rv64ua-v-amoadd_d.riscv \
+  TC=$ISA_CASE_DIR/rv64ua/rv64ua-v-amoadd_d.riscv \
   COSIM_ENABLE=1 \
   PLUSARGS='+VERBOSITY=2'
 ```
@@ -308,12 +419,12 @@ export REG_TAG=rtl_v1_216_$(date +%Y%m%d_%H%M%S)
 export REG_ROOT=$PWD/orbe_bt_env/sim/verilator_$REG_TAG/regress/rtl_v1_216
 mkdir -p "$REG_ROOT"
 
-find "$ISA_MODEL_ROOT/isa_case/rv64ui" \
-     "$ISA_MODEL_ROOT/isa_case/rv64um" \
-     "$ISA_MODEL_ROOT/isa_case/rv64ua" \
-     "$ISA_MODEL_ROOT/isa_case/rv64uf" \
-     "$ISA_MODEL_ROOT/isa_case/rv64ud" \
-     "$ISA_MODEL_ROOT/isa_case/rv64uc" \
+find "$ISA_CASE_DIR/rv64ui" \
+     "$ISA_CASE_DIR/rv64um" \
+     "$ISA_CASE_DIR/rv64ua" \
+     "$ISA_CASE_DIR/rv64uf" \
+     "$ISA_CASE_DIR/rv64ud" \
+     "$ISA_CASE_DIR/rv64uc" \
   -maxdepth 1 -type f -name '*.riscv' -print | sort > "$REG_ROOT/all_216.list"
 
 orbe_bt_env/tools/verilator_cosim.sh build \
@@ -347,7 +458,7 @@ If `rv64ui-p-add.riscv` has already passed as a smoke case and only the
 remaining 215 cases should be run, create a reduced list before the loop:
 
 ```bash
-grep -vxF "$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv" \
+grep -vxF "$ISA_CASE_DIR/rv64ui/rv64ui-p-add.riscv" \
   "$REG_ROOT/all_216.list" > "$REG_ROOT/remaining_215.list"
 
 # Then replace the loop input with:
@@ -376,7 +487,7 @@ orbe_bt_env/tools/verilator_cosim.sh run \
   --no-build \
   --dut-kind mock \
   --tag "$MOCK_TAG" \
-  --tc "$ISA_MODEL_ROOT/isa_case/rv64ui/rv64ui-p-add.riscv" \
+  --tc "$ISA_CASE_DIR/rv64ui/rv64ui-p-add.riscv" \
   --timeout 200000 \
   --verbosity 2
 ```

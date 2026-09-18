@@ -1,9 +1,15 @@
 ROOT := $(abspath ..)
-ISA_MODEL_ROOT ?= $(abspath $(ROOT)/..)
-ISA_INSTALL ?= $(ISA_MODEL_ROOT)
-ISA_API_INC ?= $(if $(wildcard $(ISA_INSTALL)/include/IsaApi.h),$(ISA_INSTALL)/include,$(ISA_INSTALL)/src/libs)
-ISA_API_LIB ?= $(if $(wildcard $(ISA_INSTALL)/lib/lib_ISA_api.so),$(ISA_INSTALL)/lib,$(ISA_INSTALL)/build)
 ISA_DPI_DIR ?= $(ROOT)/dpi
+ISA_MODEL_ROOT ?= $(abspath $(ROOT)/..)
+# Same variable name as mk/common.mk; ISA_INSTALL is kept as a legacy alias.
+ISA_MODEL_INSTALL ?= $(if $(ISA_INSTALL),$(ISA_INSTALL),$(ISA_MODEL_ROOT))
+# Match mk/common.mk: the release pair is vendored in dpi/, an external release
+# under include/ and lib/ overrides it, then a full-checkout under src/libs and
+# build.  An unreachable ISA_MODEL_INSTALL falls through to the vendored pair.
+ISA_API_INC ?= $(if $(wildcard $(ISA_MODEL_INSTALL)/include/IsaApi.h),$(ISA_MODEL_INSTALL)/include,$(if $(wildcard $(ISA_MODEL_INSTALL)/src/libs/IsaApi.h),$(ISA_MODEL_INSTALL)/src/libs,$(ISA_DPI_DIR)))
+ISA_API_LIB ?= $(if $(wildcard $(ISA_MODEL_INSTALL)/lib/lib_ISA_api.so),$(ISA_MODEL_INSTALL)/lib,$(if $(wildcard $(ISA_MODEL_INSTALL)/build/lib_ISA_api.so),$(ISA_MODEL_INSTALL)/build,$(ISA_DPI_DIR)))
+ISA_ABI_CHECKER ?= $(ROOT)/tools/check_isa_api_release.py
+PYTHON ?= python3
 ISA_CFG ?= $(ISA_DPI_DIR)/rivai_0x80000000_1core_rom.yaml
 ELF ?=
 BUILD_DIR ?= $(CURDIR)/build
@@ -47,13 +53,19 @@ VERILATOR_FLAGS := --binary --timing --trace --top-module $(TOP) \
 	-CFLAGS "-std=c++17 -I$(ISA_API_INC)" \
 	-LDFLAGS "-L$(ISA_API_LIB) -l_ISA_api -Wl,-rpath,$(ISA_API_LIB)"
 
-.PHONY: all build lint run clean help
+.PHONY: all build lint run clean help check_isa_abi
 
 all: build
 
 build: $(SIM)
 
+# Fail before Verilator when the ISA model release pair does not match the DPI
+# wrapper, instead of letting the C++ compile fail with a less obvious error.
+check_isa_abi:
+	@$(PYTHON) $(ISA_ABI_CHECKER) --inc "$(ISA_API_INC)" --lib "$(ISA_API_LIB)"
+
 $(SIM): $(SV_SOURCES) $(CPP_SOURCES)
+	@$(PYTHON) $(ISA_ABI_CHECKER) --inc "$(ISA_API_INC)" --lib "$(ISA_API_LIB)"
 	mkdir -p $(BUILD_DIR)
 	$(VERILATOR) $(VERILATOR_FLAGS) $(SV_SOURCES) $(CPP_SOURCES)
 
@@ -91,6 +103,7 @@ clean:
 help:
 	@printf '%s\n' \
 		'make lint' \
+		'make check_isa_abi' \
 		'make build' \
 		'make run ELF=/absolute/path/to/case.riscv' \
 		'make run ELF=/absolute/path/to/case.riscv TIMEOUT_CYCLES=100 MIN_FIRE_COUNT=8' \

@@ -23,8 +23,16 @@ Options:
   -h, --help                    Show this help.
 
 Environment overrides:
-  VERILATOR, JOBS, LANES, ISA_MODEL_ROOT, ISA_API_INC, ISA_API_LIB, ISA_CFG,
-  VERILATOR_BUILD_ROOT, VERILATOR_LOG_ROOT, OBJ_DIR, SIM_EXE, OBJDUMP.
+  VERILATOR, JOBS, LANES, ISA_MODEL_ROOT, ISA_MODEL_INSTALL, ISA_API_INC,
+  ISA_API_LIB, ISA_CFG, PYTHON, VERILATOR_BUILD_ROOT, VERILATOR_LOG_ROOT,
+  OBJ_DIR, SIM_EXE, OBJDUMP.
+
+ISA model lookup:
+  The release pair vendored in dpi/ is used by default, so a fresh checkout
+  needs no configuration.  ISA_MODEL_INSTALL points at either an external
+  binary release pair (include/IsaApi.h and lib/lib_ISA_api.so) or a full
+  checkout (src/libs and build).  ISA_API_INC and ISA_API_LIB override the
+  result.
 
 Default logs:
   orbe_bt_env/sim/verilator_<TAG>/log/<DUT_KIND>/<elf-name>_<SEED>/sim.log
@@ -90,9 +98,28 @@ VERILATOR=${VERILATOR:-verilator}
 OBJDUMP=${OBJDUMP:-riscv64-unknown-elf-objdump}
 
 ISA_MODEL_ROOT=${ISA_MODEL_ROOT:-$default_isa_model_root}
-ISA_API_INC=${ISA_API_INC:-$ISA_MODEL_ROOT/src/libs}
-ISA_API_LIB=${ISA_API_LIB:-$ISA_MODEL_ROOT/build}
+ISA_MODEL_INSTALL=${ISA_MODEL_INSTALL:-$ISA_MODEL_ROOT}
+# Match mk/common.mk: the release pair is vendored in dpi/, an external release
+# under include/ and lib/ overrides it, then a full-checkout under src/libs and
+# build.  An unreachable ISA_MODEL_INSTALL falls through to the vendored pair.
+if [[ -r "$ISA_MODEL_INSTALL/include/IsaApi.h" ]]; then
+  default_isa_api_inc=$ISA_MODEL_INSTALL/include
+elif [[ -r "$ISA_MODEL_INSTALL/src/libs/IsaApi.h" ]]; then
+  default_isa_api_inc=$ISA_MODEL_INSTALL/src/libs
+else
+  default_isa_api_inc=$orbe_bt_env/dpi
+fi
+if [[ -r "$ISA_MODEL_INSTALL/lib/lib_ISA_api.so" ]]; then
+  default_isa_api_lib=$ISA_MODEL_INSTALL/lib
+elif [[ -r "$ISA_MODEL_INSTALL/build/lib_ISA_api.so" ]]; then
+  default_isa_api_lib=$ISA_MODEL_INSTALL/build
+else
+  default_isa_api_lib=$orbe_bt_env/dpi
+fi
+ISA_API_INC=${ISA_API_INC:-$default_isa_api_inc}
+ISA_API_LIB=${ISA_API_LIB:-$default_isa_api_lib}
 ISA_CFG=${ISA_CFG:-$orbe_bt_env/dpi/rivai_0x80000000_1core_rom.yaml}
+PYTHON=${PYTHON:-python3}
 
 VERILATOR_BUILD_ROOT_OVERRIDE=${VERILATOR_BUILD_ROOT:-}
 VERILATOR_LOG_ROOT_OVERRIDE=${VERILATOR_LOG_ROOT:-}
@@ -264,12 +291,14 @@ check_common_inputs() {
 }
 
 check_dpi_inputs() {
-  need_file "$ISA_API_INC/IsaApi.h" "IsaApi.h"
-  need_file "$ISA_API_LIB/lib_ISA_api.so" "lib_ISA_api.so"
   need_file "$orbe_bt_env/dpi/isa_dpi_wrapper.cc" "DPI C++ wrapper"
-  if ! grep -q "IsaApiDecodeMetadata" "$ISA_API_INC/IsaApi.h"; then
-    die "IsaApi.h at $ISA_API_INC lacks IsaApiDecodeMetadata; set ISA_API_INC/ISA_API_LIB to the matching parent ISA model build"
-  fi
+  # The DPI wrapper is open source while IsaApi.h and lib_ISA_api.so are a
+  # binary release pair, so verify the pair actually matches this wrapper
+  # instead of guessing from a single symbol.  The checker prints what to do
+  # when the pair is absent or is not the one this wrapper was written against.
+  "$PYTHON" "$orbe_bt_env/tools/check_isa_api_release.py" \
+    --inc "$ISA_API_INC" --lib "$ISA_API_LIB" \
+    || die "the ISA model release pair at ISA_API_INC=$ISA_API_INC ISA_API_LIB=$ISA_API_LIB does not match dpi/isa_dpi_wrapper.cc"
 }
 
 print_config() {
@@ -277,6 +306,7 @@ print_config() {
   echo "[VERILATOR_COSIM] lanes=$LANES jobs=$JOBS"
   echo "[VERILATOR_COSIM] obj_dir=$OBJ_DIR"
   echo "[VERILATOR_COSIM] sim_exe=$SIM_EXE"
+  echo "[VERILATOR_COSIM] isa_model_install=$ISA_MODEL_INSTALL"
   echo "[VERILATOR_COSIM] isa_api_inc=$ISA_API_INC"
   echo "[VERILATOR_COSIM] isa_api_lib=$ISA_API_LIB"
 }
